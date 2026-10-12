@@ -265,7 +265,7 @@ table.sc{border-collapse:collapse;width:100%;min-width:560px;font-size:13.5px}
   var db={doc:function(p){var s=p.split("/");return docRef(s[0],s[1])},collection:function(c){return collRef(c)}};
   var downloads={save:function(r){var blob=r.data instanceof Blob?r.data:new Blob([r.data]);var u=URL.createObjectURL(blob);var a=document.createElement("a");a.href=u;a.download=r.filename;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},5000);return Promise.resolve({status:"saved"})}};
   window.claude={use:function(n){return Promise.resolve(n==="db"?db:n==="downloads"?downloads:null)}};
-  window.__AXPI_LOCAL__={get:function(){return store},replace:function(s){store=s;persist();location.reload()},memOnly:function(){return memOnly},save:downloads.save};
+  window.__AXPI_LOCAL__={get:function(){return store},replace:function(s){s._seedVer=(window.__SEED__||{})._ver;store=s;persist();location.reload()},memOnly:function(){return memOnly},save:downloads.save};
 })();
 </script>
 <script>
@@ -1059,7 +1059,7 @@ render();
   function stamp(){var d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")}
   var file=document.createElement("input");file.type="file";file.accept=".json,application/json";file.hidden=true;document.body.appendChild(file);
   file.onchange=function(){var f=file.files[0];if(!f)return;var r=new FileReader();r.onload=function(){try{var s=JSON.parse(r.result);if(!s||typeof s!=="object"||!s.items)throw 0;
-      if(confirm("현재 보드 내용을 이 백업 파일로 바꿉니다. 계속할까요?"))L.replace(s)}catch(e){alert("AX/PI 보드 백업 파일이 아닙니다.")}file.value=""};r.readAsText(f)};
+      var cur=L.get(),has=cur&&cur.items&&Object.keys(cur.items).length;if(confirm("현재 보드 내용을 이 백업 파일로 바꿉니다."+(has?"\n\n바꾸기 전에 지금 내용을 백업 파일(AXPI_보드백업_가져오기전_날짜.json)로 먼저 내려받습니다.":"")+"\n\n계속할까요?")){if(has){L.save({filename:"AXPI_보드백업_가져오기전_"+stamp()+".json",data:JSON.stringify(cur,null,1)});setTimeout(function(){L.replace(s)},1200)}else L.replace(s)}}catch(e){alert("AX/PI 보드 백업 파일이 아닙니다.")}file.value=""};r.readAsText(f)};
   
   btn("백업 가져오기",function(){file.click()});
   btn("백업 내보내기",function(){L.save({filename:"AXPI_보드백업_"+stamp()+".json",data:JSON.stringify(L.get(),null,1)})});
