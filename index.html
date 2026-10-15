@@ -154,6 +154,11 @@ table.sc{border-collapse:collapse;width:100%;min-width:560px;font-size:13.5px}
 .sc td.off{color:var(--ink);font-weight:700;text-decoration:underline;text-underline-offset:3px}
 .sc input{width:76px;text-align:right;border:1px solid var(--line);border-radius:8px;padding:3px 8px;background:var(--surface);font-variant-numeric:tabular-nums}
 .sc input.off{border-color:var(--ink);font-weight:700}
+.sc .mact{white-space:nowrap;text-align:right}
+.sc .mact button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:1px 9px;font-size:11.5px;color:var(--ink2);margin-left:4px}
+.sc .mact button:hover{border-color:var(--ink);color:var(--ink)}
+.sc tr.mhidden td{color:var(--muted)}
+.mfoot{display:flex;gap:6px;flex-wrap:wrap;padding:10px 26px;border-top:1px dashed var(--line)}
 .sc .auto{font-size:11px;color:var(--muted)}
 
 /* rocks */
@@ -341,7 +346,9 @@ function autoRate(w){
   return Math.round(done/pool.length*100);
 }
 function metricVal(m,w){if(m.auto)return autoRate(w);const v=(weeks[w]&&weeks[w].metrics||{})[m.key];return v===undefined||v===null||v===""?null:Number(v)}
-function allMetrics(){return [{key:"_auto",label:"지난 업무 완료율",unit:"%",target:90,dir:"up",auto:true},...(config.metrics||[])]}
+function allMetrics(){return [{key:"_auto",label:"지난 업무 완료율",unit:"%",target:90,dir:"up",auto:true,hidden:!!config.autoHidden},...(config.metrics||[])]}
+function visibleMetrics(){return allMetrics().filter(m=>!m.hidden)}
+let showHiddenMetrics=false;
 function isOff(m,v){if(v===null||m.target===""||m.target===undefined||m.target===null)return false;return m.dir==="down"?v>Number(m.target):v<Number(m.target)}
 
 /* ---------- render ---------- */
@@ -357,7 +364,7 @@ function chipRow(it){
   if(it.source)c.push(`<span class="mono" style="font-size:11px">· ${esc(it.source)}</span>`);
   return c.join("");
 }
-const MV={task:"→ 업무로 이관",fu:"→ F/up으로 이관",decision:"→ 결정사항으로 이관"};
+const MV={task:"→ 업무로 이관",fu:"→ F/up으로 이관",decision:"→ 결정사항으로 이관",metric:"→ 지표로 관리"};
 function rowHTML(it,moves){
   const mv=writable&&moves&&moves.length?`<div class="mv">${moves.filter(k=>k!==it.type).map(k=>`<button type="button" data-act="move" data-to="${k}">${MV[k]}</button>`).join("")}</div>`:"";
   const opts=Object.entries(STATUS).map(([k,v])=>`<option value="${k}" ${it.status===k?"selected":""}>${v}</option>`).join("");
@@ -401,16 +408,19 @@ function renderStats(){
 
 function scorecardHTML(){
   const ws=[3,2,1].map(n=>addDays(curWeek,-7*n));
-  const head=`<tr><th>지표</th><th>목표</th>${ws.map(w=>`<th>${md(w)}</th>`).join("")}<th>이번 주</th></tr>`;
-  const body=allMetrics().map(m=>{
+  const head=`<tr><th>지표</th><th>목표</th>${ws.map(w=>`<th>${md(w)}</th>`).join("")}<th>이번 주</th>${writable?"<th></th>":""}</tr>`;
+  const hiddenM=allMetrics().filter(m=>m.hidden);
+  const list_=showHiddenMetrics?allMetrics():visibleMetrics();
+  const body=list_.map(m=>{
     const past=ws.map(w=>{const v=metricVal(m,w);return `<td class="v ${isOff(m,v)?"off":""}">${v===null?"—":v+esc(m.unit||"")}</td>`}).join("");
     const cur=metricVal(m,curWeek);
     const tgt=m.target===""||m.target===undefined||m.target===null?"—":(m.dir==="down"?"≤":"≥")+m.target+esc(m.unit||"");
     const curCell=m.auto?`<td class="v ${isOff(m,cur)?"off":""}">${cur===null?"—":cur+"%"} <span class="auto">자동</span></td>`
       :`<td><input type="number" step="any" data-wk="metric" data-key="${esc(m.key)}" value="${cur===null?"":cur}" class="${isOff(m,cur)?"off":""}" aria-label="${esc(m.label)} 이번 주 값" ${writable?"":"readonly"}> <span class="auto">${esc(m.unit||"")}</span></td>`;
-    return `<tr><td>${esc(m.label)}</td><td class="v">${tgt}</td>${past}${curCell}</tr>`}).join("");
+    const tools=writable?`<td class="mact">${m.auto?"":`<button type="button" data-act="mEdit" data-key="${esc(m.key)}">수정</button>`}<button type="button" data-act="mHide" data-key="${esc(m.key)}">${m.hidden?"보이기":"숨김"}</button></td>`:"";
+    return `<tr class="${m.hidden?"mhidden":""}"><td>${esc(m.label)}${m.hidden?' <span class="auto">(숨김)</span>':""}${m.fromItem?' <span class="auto">· 업무에서 이관</span>':""}</td><td class="v">${tgt}</td>${past}${curCell}${tools}</tr>`}).join("");
   return `<div class="tbl-wrap"><table class="sc">${head}${body}</table></div>`+
-    ((config.metrics||[]).length?"":`<div class="empty">지표는 ‘설정·보관함’에서 추가할 수 있습니다.</div>`);
+    (writable?`<div class="mfoot"><button type="button" class="btn sm" data-act="mNew">+ 지표 추가</button>${hiddenM.length?`<button type="button" class="btn sm" data-act="mShowHidden">${showHiddenMetrics?"숨긴 지표 감추기":`숨긴 지표 ${hiddenM.length}개 보기`}</button>`:""}</div>`:"");
 }
 function rocksForWeek(){const q=quarterOf(curWeek);return [...rocks.values()].filter(r=>r.quarter===q).sort((a,b)=>(a.title||"").localeCompare(b.title||""))}
 function rockHTML(r){
@@ -451,8 +461,8 @@ function renderWeekly(){
    ${sec("02","주간 지표","목표 미달은 굵은 밑줄 → 이슈로 올려 논의",scorecardHTML())}
    ${sec("03","분기 핵심과제",quarterOf(curWeek)+" · 지연은 이슈로",(rk.length?rk.map(rockHTML).join(""):`<div class="empty">이번 분기 핵심과제가 없습니다. 아래에서 추가하세요.</div>`)+qa("rock"))}
    ${sec("04","주간 공유사항","일정·보고·공지 등 헤드라인",`<textarea class="note" data-wk="text" data-key="headlines" placeholder="예) 주요 일정·보고·공지" ${ro}>${esc(w.headlines||"")}</textarea>`)}
-   ${sec("05","지난 업무 점검",`체크하면 이번 주 완료로 기록 · ${prevOpen.filter(isOpen).length}건 남음`,rows(prevOpen,"점검할 지난 업무가 없습니다.","w05",["fu","decision"]),"",hideBtn("w05"))}
-   ${sec("06","F/up · 이슈","컨택 대상과 함께 해결방안 논의",rows(fuIssue,"열려 있는 F/up·이슈가 없습니다.","w06",["task","decision"])+qa("fu"),"",hideBtn("w06"))}
+   ${sec("05","지난 업무 점검",`체크하면 이번 주 완료로 기록 · ${prevOpen.filter(isOpen).length}건 남음`,rows(prevOpen,"점검할 지난 업무가 없습니다.","w05",["fu","decision","metric"]),"",hideBtn("w05"))}
+   ${sec("06","F/up · 이슈","컨택 대상과 함께 해결방안 논의",rows(fuIssue,"열려 있는 F/up·이슈가 없습니다.","w06",["task","decision","metric"])+qa("fu"),"",hideBtn("w06"))}
    ${sec("07","이번 주 신규 · 다음 주 할 일",nextDue.length?`다음 주 기한 ${nextDue.length}건 포함`:"",rows([...thisWk,...nextDue].sort(sortItems),"이번 주 새로 추가한 업무가 없습니다. 아래에서 바로 추가하세요.","w07",["fu","decision"])+qa("task"),"",hideBtn("w07"))}
    ${sec("08","결정사항 · 마무리","",rows(decisions,"이번 주 결정사항을 기록하세요.")+qa("decision")+
       (recentDec.length?`<div class="grp-h"><span>최근 결정사항</span><span class="mono">${recentDec.length}</span></div>`+recentDec.map(rowHTML).join(""):"")+
@@ -553,12 +563,62 @@ function setStatus(id,st){
 }
 function moveItem(id,to){
   const it=items.get(id);if(!it||it.type===to)return;
+  if(to==="metric")return openMetricEditor(null,it);
   const next={...it,type:to,updatedAt:iso(today)};
   const lbl={task:"업무",fu:"F/up",decision:"결정사항"};
   next.notes=((it.notes||"")+(it.notes?"\n":"")+`[${md(iso(today))}] ${lbl[it.type]||TYPES[it.type]||it.type}→${lbl[to]} 이관`);
   if(to==="decision"){next.status="done";next.doneAt=next.doneAt||iso(today);next.week=curWeek}
   else if(it.type==="decision"&&next.status==="done"){next.status="doing";delete next.doneAt}
   saveItem(next);toast(`'${it.title.slice(0,20)}' → ${lbl[to]}(으)로 옮겼습니다`);
+}
+function openMetricEditor(m,fromItem){
+  if(!writable)return toast("보기 전용입니다");
+  const isNew=!m;
+  m=m||{key:"m"+Date.now().toString(36),label:fromItem?fromItem.title:"",unit:"",target:"",dir:"up"};
+  document.getElementById("layer").innerHTML=`<div class="scrim" data-close><form class="panel" id="mForm" role="dialog" aria-label="지표 편집">
+    <h3>${fromItem?"업무를 지표로 관리":isNew?"지표 추가":"지표 수정"}</h3>
+    ${fromItem?`<p class="status-line">‘${esc(fromItem.title)}’을(를) 주간 지표로 만들어 매주 값을 기록합니다.</p>`:""}
+    <div class="f"><label for="m_label">지표 이름</label><input id="m_label" name="label" required value="${esc(m.label)}"></div>
+    <div class="grid2">
+      <div class="f"><label for="m_unit">단위</label><input id="m_unit" name="unit" value="${esc(m.unit||"")}" placeholder="%, 명, 건"></div>
+      <div class="f"><label for="m_target">목표값</label><input id="m_target" name="target" type="number" step="any" value="${m.target===""||m.target==null?"":esc(m.target)}"></div>
+      <div class="f"><label for="m_dir">방향</label><select id="m_dir" name="dir"><option value="up" ${m.dir!=="down"?"selected":""}>높을수록 좋음</option><option value="down" ${m.dir==="down"?"selected":""}>낮을수록 좋음</option></select></div>
+      <div class="f"><label for="m_now">이번 주 값</label><input id="m_now" name="now" type="number" step="any" value="${(()=>{const v=metricVal(m,curWeek);return v===null?"":v})()}"></div>
+    </div>
+    ${fromItem?`<label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink2)"><input type="checkbox" name="closeItem" checked> 원래 업무는 완료 처리해 목록에서 빼기 (메모에 이관 기록)</label>`:""}
+    <div class="panel-foot">
+      <span id="mDelZone">${isNew?"":`<button type="button" class="btn danger" id="mDel">삭제</button>`}</span>
+      <span style="display:flex;gap:8px"><button type="button" class="btn" data-close>닫기</button><button class="btn primary">저장</button></span>
+    </div>
+  </form></div>`;
+  const form=document.getElementById("mForm");form.querySelector("#m_label").focus();
+  form.addEventListener("submit",e=>{
+    e.preventDefault();const fd=new FormData(form);
+    const tg=String(fd.get("target")||"");
+    const next={...m,label:String(fd.get("label")).trim(),unit:String(fd.get("unit")||"").trim(),target:tg===""?"":Number(tg),dir:String(fd.get("dir")||"up")};
+    if(fromItem)next.fromItem=fromItem.id;
+    const arr=[...(config.metrics||[])];const ix=arr.findIndex(x=>x.key===m.key);
+    if(ix>=0)arr[ix]=next;else arr.push(next);
+    saveConfig({...config,metrics:arr});
+    const nv=String(fd.get("now")||"");
+    if(nv!==""||metricVal(m,curWeek)!==null)patchWeek({metrics:{[next.key]:nv===""?null:Number(nv)}});
+    if(fromItem&&fd.get("closeItem")){
+      const it={...fromItem,status:"done",doneAt:fromItem.doneAt||iso(today),updatedAt:iso(today)};
+      it.notes=(it.notes?it.notes+"\n":"")+`[${md(iso(today))}] 지표로 이관 (${next.label})`;
+      saveItem(it);
+    }
+    closeLayer();render();toast(fromItem?"지표로 옮겼습니다":isNew?"지표를 추가했습니다":"지표를 수정했습니다");
+  });
+  const del=form.querySelector("#mDel");
+  if(del)del.onclick=()=>{
+    document.getElementById("mDelZone").innerHTML=`<span class="confirm">지표와 기록한 값을 목록에서 뺄까요? <button type="button" class="btn sm danger" id="mDelYes">삭제</button><button type="button" class="btn sm" id="mDelNo">취소</button></span>`;
+    document.getElementById("mDelNo").onclick=()=>openMetricEditor(m);
+    document.getElementById("mDelYes").onclick=()=>{saveConfig({...config,metrics:(config.metrics||[]).filter(x=>x.key!==m.key)});closeLayer();toast("지표를 삭제했습니다")};
+  };
+}
+function toggleMetricHidden(key){
+  if(key==="_auto"){saveConfig({...config,autoHidden:!config.autoHidden});return}
+  saveConfig({...config,metrics:(config.metrics||[]).map(x=>x.key===key?{...x,hidden:!x.hidden}:x)});
 }
 function saveRock(r){if(!db)return;rocks.set(r.id,r);render();return serial("rocks/"+r.id,()=>db.doc("rocks/"+r.id).set(r))}
 async function saveConfig(next){config=next;render();if(db)serial("config",()=>db.doc("config/main").set(next))}
@@ -633,7 +693,7 @@ function snapshot(scope){
   const open=all.filter(i=>isOpen(i)&&!["fu","issue","decision"].includes(i.type)).sort(sortItems);
   const fu=all.filter(i=>isOpen(i)&&["fu","issue"].includes(i.type)).sort(sortItems);
   const dec=all.filter(i=>i.type==="decision"&&i.week===curWeek);
-  const metrics=allMetrics().map(m=>({label:m.label,unit:m.unit||"",target:m.target,dir:m.dir,value:metricVal(m,curWeek),prev:metricVal(m,addDays(curWeek,-7)),off:isOff(m,metricVal(m,curWeek))}));
+  const metrics=visibleMetrics().map(m=>({label:m.label,unit:m.unit||"",target:m.target,dir:m.dir,value:metricVal(m,curWeek),prev:metricVal(m,addDays(curWeek,-7)),off:isOff(m,metricVal(m,curWeek))}));
   const rk=rocksForWeek().map(r=>({title:r.title,owner:r.owner||"",progress:r.progress,status:RSTATUS[r.status]||r.status,due:r.due||""}));
   const rt=w.ratings||{};const sc=config.members.map(m=>Number(rt[m])).filter(n=>n>0);
   return {scope,pastDone,done,open,fu,dec,metrics,rocks:rk,oneLiners:w.oneLiners||{},headlines:w.headlines||"",closing:w.closing||"",ratingAvg:sc.length?Number((sc.reduce((a,b)=>a+b,0)/sc.length).toFixed(1)):null};
@@ -1051,6 +1111,10 @@ V.addEventListener("click",e=>{
     if(a==="edit")openEditor(it);
     if(a==="move"&&writable)moveItem(id,act.dataset.to);return}
   if(a==="saveReport")saveReport();
+  if(a==="mNew")openMetricEditor(null);
+  if(a==="mEdit"){const m=(config.metrics||[]).find(x=>x.key===act.dataset.key);if(m)openMetricEditor(m)}
+  if(a==="mHide")toggleMetricHidden(act.dataset.key);
+  if(a==="mShowHidden"){showHiddenMetrics=!showHiddenMetrics;render()}
   if(a==="hideDone"){const k=act.dataset.key;hideDone[k]=!hideDone[k];try{localStorage.setItem("axpi-hide",JSON.stringify(hideDone))}catch(e){}render()}
   if(a==="rm"){const k=act.dataset.key,i=+act.dataset.i;const arr=[...(config[k]||[])];arr.splice(i,1);saveConfig({...config,[k]:arr})}
   if(a==="rmRock"){const id=act.dataset.id;rocks.delete(id);render();serial("rocks/"+id,()=>db.doc("rocks/"+id).delete())}
@@ -1130,7 +1194,7 @@ render();
     :"데이터는 이 기기에만 저장됩니다. 처음에는 ‘백업 가져오기’로 데이터를 넣고, 회의 후에는 ‘백업 내보내기’로 파일을 남겨 주세요.";
 })();
 </script>
-<script>window.__APPVER__='2026.10.15-2';</script>
+<script>window.__APPVER__='2026.10.15-1311';</script>
 <script>(function(){
   var V=window.__APPVER__||"";
   function stamp(){var d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")}
@@ -1155,6 +1219,18 @@ render();
   }
   var acts=document.querySelector(".actions");
   if(acts){var b=document.createElement("button");b.className="btn";b.type="button";b.textContent="앱 다시 설치";b.onclick=reinstall;acts.appendChild(b)}
+  // 새 버전 알림: 열 때마다 version.json 확인
+  function banner(nv){
+    if(document.getElementById("updBar"))return;
+    var d=document.createElement("div");d.id="updBar";
+    d.style.cssText="position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:40;background:#1d1d1f;color:#fbfbfa;border-radius:999px;padding:8px 8px 8px 18px;display:flex;gap:12px;align-items:center;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.18);max-width:92vw";
+    d.innerHTML='<span>새 버전('+nv+')이 있습니다</span><button type="button" style="border:0;border-radius:999px;background:#fbfbfa;color:#1d1d1f;padding:6px 14px;font-weight:600">지금 업데이트</button><button type="button" aria-label="닫기" style="border:0;background:transparent;color:#fbfbfa;font-size:16px;padding:0 6px">×</button>';
+    d.children[1].onclick=reinstall;d.children[2].onclick=function(){d.remove()};
+    document.body.appendChild(d);
+  }
+  function check(){fetch("./version.json?t="+Date.now(),{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).then(function(j){if(j&&j.version&&j.version!==V)banner(j.version)}).catch(function(){})}
+  addEventListener("load",function(){setTimeout(check,1500)});
+  document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible")check()});
   var ft=document.getElementById("foot");
   if(ft){var v=document.createElement("span");v.textContent=" · 앱 버전 "+V;ft.appendChild(v)}
 })();
