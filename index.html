@@ -1130,6 +1130,34 @@ render();
     :"데이터는 이 기기에만 저장됩니다. 처음에는 ‘백업 가져오기’로 데이터를 넣고, 회의 후에는 ‘백업 내보내기’로 파일을 남겨 주세요.";
 })();
 </script>
-<script>if("serviceWorker" in navigator){addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){})})}</script>
+<script>window.__APPVER__='2026.10.15-2';</script>
+<script>(function(){
+  var V=window.__APPVER__||"";
+  function stamp(){var d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")}
+  var reg=null, reloading=false;
+  if("serviceWorker" in navigator){
+    addEventListener("load",function(){
+      navigator.serviceWorker.register("sw.js").then(function(r){reg=r;r.update().catch(function(){})}).catch(function(){});
+    });
+    navigator.serviceWorker.addEventListener("controllerchange",function(){if(reloading)return;reloading=true;location.reload()});
+  }
+  async function reinstall(){
+    var L=window.__AXPI_LOCAL__;
+    if(!confirm("앱을 최신 버전으로 다시 설치합니다.\n\n입력한 업무 데이터는 그대로 남습니다. 혹시 몰라 지금 데이터를 백업 파일로 먼저 내려받습니다.\n\n인터넷 연결이 필요합니다. 계속할까요?"))return;
+    try{if(L){var cur=L.get();if(cur&&cur.items&&Object.keys(cur.items).length)L.save({filename:"AXPI_보드백업_재설치전_"+stamp()+".json",data:JSON.stringify(cur,null,1)})}}catch(e){}
+    try{
+      var ok=await fetch("./index.html?check="+Date.now(),{cache:"no-store"}).then(function(r){return r.ok}).catch(function(){return false});
+      if(!ok){alert("인터넷에 연결되어 있지 않아 다시 설치할 수 없습니다. 연결 후 다시 눌러 주세요.");return}
+      if("serviceWorker" in navigator){var rs=await navigator.serviceWorker.getRegistrations();await Promise.all(rs.map(function(r){return r.unregister()}))}
+      if(window.caches){var ks=await caches.keys();await Promise.all(ks.map(function(k){return caches.delete(k)}))}
+    }catch(e){}
+    setTimeout(function(){location.replace("./?v="+Date.now())},1500);
+  }
+  var acts=document.querySelector(".actions");
+  if(acts){var b=document.createElement("button");b.className="btn";b.type="button";b.textContent="앱 다시 설치";b.onclick=reinstall;acts.appendChild(b)}
+  var ft=document.getElementById("foot");
+  if(ft){var v=document.createElement("span");v.textContent=" · 앱 버전 "+V;ft.appendChild(v)}
+})();
+</script>
 </body>
 </html>
