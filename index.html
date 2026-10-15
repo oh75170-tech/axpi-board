@@ -113,6 +113,17 @@ select.st.s-check{border-color:var(--ink);border-style:dashed;color:var(--ink)}
 select.st.s-done{background:var(--ink);border-color:var(--ink);color:var(--surface)}
 select.st.s-off{background:var(--ink);border-color:var(--ink);color:var(--surface)}
 select.st.s-hold{color:var(--muted)}
+.mv{display:flex;gap:4px;margin-top:2px;flex-wrap:wrap}
+.mv button{border:1px dashed var(--line);background:transparent;border-radius:999px;padding:1px 9px;font-size:11.5px;color:var(--ink2)}
+.mv button:hover{border-color:var(--ink);color:var(--ink)}
+.hidebtn{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:2px 10px;font-size:11.5px;color:var(--ink2);margin-left:8px}
+.hidebtn[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.hidden-note{padding:8px 26px;font-size:12px;color:var(--muted);border-top:1px dashed var(--line)}
+.scope{display:flex;flex-direction:column;gap:8px}
+.scope label{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:12px 14px;cursor:pointer}
+.scope label:has(input:checked){border-color:var(--ink);background:var(--sunk)}
+.scope b{display:block;font-size:14px}
+.scope span{font-size:12.5px;color:var(--muted)}
 .edit{border:0;background:transparent;color:var(--muted);padding:2px 6px;font-size:16px;line-height:1}
 .edit:hover{color:var(--ink)}
 @media (max-width:560px){.row{grid-template-columns:24px 1fr;padding:12px 18px}.right{grid-column:2;justify-content:flex-start}.sec-h{padding:16px 18px 10px}}
@@ -283,6 +294,8 @@ const DEFAULT_CONFIG={
 let db=null, sample=null, downloads=null, ready=false, writable=true;
 let items=new Map(), config=DEFAULT_CONFIG, weeks={}, rocks=new Map(), reports=[];
 let view="meet";
+let hideDone={};try{hideDone=JSON.parse(localStorage.getItem("axpi-hide")||"{}")||{}}catch(e){}
+let rscope="all";try{rscope=localStorage.getItem("axpi-rscope")||"all"}catch(e){}
 let mode="weekly";try{if(localStorage.getItem("axpi-mode")==="council")mode="council"}catch(e){}
 const filt={cat:"",owner:"",status:"open",type:"",q:"",mt:""};
 const today=new Date(); today.setHours(0,0,0,0);
@@ -344,16 +357,22 @@ function chipRow(it){
   if(it.source)c.push(`<span class="mono" style="font-size:11px">· ${esc(it.source)}</span>`);
   return c.join("");
 }
-function rowHTML(it){
+const MV={task:"→ 업무로 이관",fu:"→ F/up으로 이관",decision:"→ 결정사항으로 이관"};
+function rowHTML(it,moves){
+  const mv=writable&&moves&&moves.length?`<div class="mv">${moves.filter(k=>k!==it.type).map(k=>`<button type="button" data-act="move" data-to="${k}">${MV[k]}</button>`).join("")}</div>`:"";
   const opts=Object.entries(STATUS).map(([k,v])=>`<option value="${k}" ${it.status===k?"selected":""}>${v}</option>`).join("");
   return `<div class="row st-${esc(it.status)}" data-id="${esc(it.id)}">
     <button class="chk" data-act="toggle" aria-label="완료 체크" ${writable?"":"disabled"}>✓</button>
-    <div class="main"><div class="t">${esc(it.title)}</div><div class="meta">${chipRow(it)}</div>${it.notes?`<div class="notes">${esc(it.notes)}</div>`:""}</div>
+    <div class="main"><div class="t">${esc(it.title)}</div><div class="meta">${chipRow(it)}</div>${it.notes?`<div class="notes">${esc(it.notes)}</div>`:""}${mv}</div>
     <div class="right"><select class="st s-${esc(it.status)}" data-act="status" aria-label="상태" ${writable?"":"disabled"}>${opts}</select><button class="edit" data-act="edit" aria-label="수정">⋯</button></div>
   </div>`;
 }
-function rows(arr,emptyMsg){return arr.length?arr.map(rowHTML).join(""):`<div class="empty">${emptyMsg}</div>`}
-function sec(no,title,hint,body,id){return `<section class="sec"${id?` id="${id}"`:""}><div class="sec-h">${no?`<span class="no">${no}</span>`:""}<h2>${title}</h2>${hint?`<span class="hint">${hint}</span>`:""}</div><div class="sec-b">${body}</div></section>`}
+function rows(arr,emptyMsg,key,moves){
+  const hid=key&&hideDone[key], shown=hid?arr.filter(isOpen):arr, nDone=arr.length-arr.filter(isOpen).length;
+  return (shown.length?shown.map(i=>rowHTML(i,moves)).join(""):`<div class="empty">${hid&&arr.length?"완료 항목만 있어 모두 숨겼습니다.":emptyMsg}</div>`)+(hid&&nDone?`<div class="hidden-note">완료 ${nDone}건 숨김</div>`:"");
+}
+function hideBtn(key){return `<button type="button" class="hidebtn" data-act="hideDone" data-key="${key}" aria-pressed="${hideDone[key]?"true":"false"}">${hideDone[key]?"완료 보기":"완료 숨김"}</button>`}
+function sec(no,title,hint,body,id,tool){return `<section class="sec"${id?` id="${id}"`:""}><div class="sec-h">${no?`<span class="no">${no}</span>`:""}<h2>${title}</h2>${hint?`<span class="hint">${hint}</span>`:""}${tool||""}</div><div class="sec-b">${body}</div></section>`}
 
 function renderStats(){
   const all=list();
@@ -432,9 +451,9 @@ function renderWeekly(){
    ${sec("02","주간 지표","목표 미달은 굵은 밑줄 → 이슈로 올려 논의",scorecardHTML())}
    ${sec("03","분기 핵심과제",quarterOf(curWeek)+" · 지연은 이슈로",(rk.length?rk.map(rockHTML).join(""):`<div class="empty">이번 분기 핵심과제가 없습니다. 아래에서 추가하세요.</div>`)+qa("rock"))}
    ${sec("04","주간 공유사항","일정·보고·공지 등 헤드라인",`<textarea class="note" data-wk="text" data-key="headlines" placeholder="예) 주요 일정·보고·공지" ${ro}>${esc(w.headlines||"")}</textarea>`)}
-   ${sec("05","지난 업무 점검",`체크하면 이번 주 완료로 기록 · ${prevOpen.filter(isOpen).length}건 남음`,rows(prevOpen,"점검할 지난 업무가 없습니다."))}
-   ${sec("06","F/up · 이슈","컨택 대상과 함께 해결방안 논의",rows(fuIssue,"열려 있는 F/up·이슈가 없습니다.")+qa("fu"))}
-   ${sec("07","이번 주 신규 · 다음 주 할 일",nextDue.length?`다음 주 기한 ${nextDue.length}건 포함`:"",rows([...thisWk,...nextDue].sort(sortItems),"이번 주 새로 추가한 업무가 없습니다. 아래에서 바로 추가하세요.")+qa("task"))}
+   ${sec("05","지난 업무 점검",`체크하면 이번 주 완료로 기록 · ${prevOpen.filter(isOpen).length}건 남음`,rows(prevOpen,"점검할 지난 업무가 없습니다.","w05",["fu","decision"]),"",hideBtn("w05"))}
+   ${sec("06","F/up · 이슈","컨택 대상과 함께 해결방안 논의",rows(fuIssue,"열려 있는 F/up·이슈가 없습니다.","w06",["task","decision"])+qa("fu"),"",hideBtn("w06"))}
+   ${sec("07","이번 주 신규 · 다음 주 할 일",nextDue.length?`다음 주 기한 ${nextDue.length}건 포함`:"",rows([...thisWk,...nextDue].sort(sortItems),"이번 주 새로 추가한 업무가 없습니다. 아래에서 바로 추가하세요.","w07",["fu","decision"])+qa("task"),"",hideBtn("w07"))}
    ${sec("08","결정사항 · 마무리","",rows(decisions,"이번 주 결정사항을 기록하세요.")+qa("decision")+
       (recentDec.length?`<div class="grp-h"><span>최근 결정사항</span><span class="mono">${recentDec.length}</span></div>`+recentDec.map(rowHTML).join(""):"")+
       `<textarea class="note" data-wk="text" data-key="closing" placeholder="전파사항, 다음 회의 전 준비할 것" ${ro}>${esc(w.closing||"")}</textarea>
@@ -456,8 +475,8 @@ function renderCouncil(){
   const rep=reports.find(r=>r.id===curWeek+"-c");
   document.getElementById("view").innerHTML=`<div style="display:flex;flex-direction:column;gap:12px">
    ${sec("01","협의체 공유사항","상정 안건·전달받은 내용",`<textarea class="note" data-wk="ctext" data-key="headlines" placeholder="예) To-Be 체크리스트 배포, Mega과제 일정 공유…" ${ro}>${esc(c.headlines||"")}</textarea>`)}
-   ${sec("02","협의체 F/up · 이슈",`체크하면 완료로 기록 · ${fu.filter(isOpen).length}건 남음`,rows(fu,"열려 있는 협의체 F/up·이슈가 없습니다.")+qa("fu"))}
-   ${sec("03","협의체 업무","",rows(tasks,"진행 중인 협의체 업무가 없습니다.")+qa("task"))}
+   ${sec("02","협의체 F/up · 이슈",`체크하면 완료로 기록 · ${fu.filter(isOpen).length}건 남음`,rows(fu,"열려 있는 협의체 F/up·이슈가 없습니다.","c02",["task","decision"])+qa("fu"),"",hideBtn("c02"))}
+   ${sec("03","협의체 업무","",rows(tasks,"진행 중인 협의체 업무가 없습니다.","c03",["fu","decision"])+qa("task"),"",hideBtn("c03"))}
    ${sec("04","결정사항 · 전파사항","",rows(dec,"이번 협의체 결정사항을 기록하세요.")+qa("decision")+
       (recentDec.length?`<div class="grp-h"><span>최근 협의체 결정사항</span><span class="mono">${recentDec.length}</span></div>`+recentDec.map(rowHTML).join(""):"")+
       `<textarea class="note" data-wk="ctext" data-key="closing" placeholder="그룹 내 전파사항, 주간회의에서 다룰 것" ${ro}>${esc(c.closing||"")}</textarea>
@@ -532,6 +551,15 @@ function setStatus(id,st){
   if(st==="done"){it.doneAt=it.doneAt||iso(today)}else delete it.doneAt;
   it.updatedAt=iso(today);saveItem(it);
 }
+function moveItem(id,to){
+  const it=items.get(id);if(!it||it.type===to)return;
+  const next={...it,type:to,updatedAt:iso(today)};
+  const lbl={task:"업무",fu:"F/up",decision:"결정사항"};
+  next.notes=((it.notes||"")+(it.notes?"\n":"")+`[${md(iso(today))}] ${lbl[it.type]||TYPES[it.type]||it.type}→${lbl[to]} 이관`);
+  if(to==="decision"){next.status="done";next.doneAt=next.doneAt||iso(today);next.week=curWeek}
+  else if(it.type==="decision"&&next.status==="done"){next.status="doing";delete next.doneAt}
+  saveItem(next);toast(`'${it.title.slice(0,20)}' → ${lbl[to]}(으)로 옮겼습니다`);
+}
 function saveRock(r){if(!db)return;rocks.set(r.id,r);render();return serial("rocks/"+r.id,()=>db.doc("rocks/"+r.id).set(r))}
 async function saveConfig(next){config=next;render();if(db)serial("config",()=>db.doc("config/main").set(next))}
 function merge(a,b){const o={...a};for(const k in b){o[k]=(b[k]&&typeof b[k]==="object"&&!Array.isArray(b[k])&&a[k]&&typeof a[k]==="object")?merge(a[k],b[k]):b[k]}return o}
@@ -596,29 +624,35 @@ document.getElementById("layer").addEventListener("click",e=>{if(e.target.hasAtt
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeLayer()});
 
 /* ---------- report text ---------- */
-function snapshot(){
+function pastDoneOf(all){return all.filter(i=>i.status==="done"&&i.type!=="decision"&&(!i.doneAt||i.doneAt<curWeek)).sort((a,b)=>(b.doneAt||"").localeCompare(a.doneAt||""))}
+function snapshot(scope){
+  scope=scope||rscope;
   const all=list(),end=weekEnd(),w=wk();
-  const done=all.filter(i=>i.doneAt&&i.doneAt>=curWeek&&i.doneAt<=end&&i.type!=="decision").sort(sortItems);
+  const done=scope==="active"?[]:all.filter(i=>i.doneAt&&i.doneAt>=curWeek&&i.doneAt<=end&&i.type!=="decision").sort(sortItems);
+  const pastDone=scope==="active"?[]:pastDoneOf(all);
   const open=all.filter(i=>isOpen(i)&&!["fu","issue","decision"].includes(i.type)).sort(sortItems);
   const fu=all.filter(i=>isOpen(i)&&["fu","issue"].includes(i.type)).sort(sortItems);
   const dec=all.filter(i=>i.type==="decision"&&i.week===curWeek);
   const metrics=allMetrics().map(m=>({label:m.label,unit:m.unit||"",target:m.target,dir:m.dir,value:metricVal(m,curWeek),prev:metricVal(m,addDays(curWeek,-7)),off:isOff(m,metricVal(m,curWeek))}));
   const rk=rocksForWeek().map(r=>({title:r.title,owner:r.owner||"",progress:r.progress,status:RSTATUS[r.status]||r.status,due:r.due||""}));
   const rt=w.ratings||{};const sc=config.members.map(m=>Number(rt[m])).filter(n=>n>0);
-  return {done,open,fu,dec,metrics,rocks:rk,oneLiners:w.oneLiners||{},headlines:w.headlines||"",closing:w.closing||"",ratingAvg:sc.length?Number((sc.reduce((a,b)=>a+b,0)/sc.length).toFixed(1)):null};
+  return {scope,pastDone,done,open,fu,dec,metrics,rocks:rk,oneLiners:w.oneLiners||{},headlines:w.headlines||"",closing:w.closing||"",ratingAvg:sc.length?Number((sc.reduce((a,b)=>a+b,0)/sc.length).toFixed(1)):null};
 }
 function minutesText(s){
   s=s||snapshot();
   const line=i=>`- [${STATUS[i.status]}] ${i.title} (${i.owner||"미지정"}${i.contact?" / 컨택 "+i.contact:""}${i.due?" / ~"+md(i.due):""}${overdue(i)?" / 기한경과":""})${i.notes?"\n    "+i.notes.replace(/\n/g,"\n    "):""}`;
   const mi=meetInfo();
-  return [`AX/PI그룹 주간업무 ${isoWeek(curWeek)} (회의 ${mi.date} ${mi.time}, ${mi.place})`,"",
+  const A=s.scope==="active", nw=i=>i.week===curWeek?"[신규] ":"";
+  const line2=i=>line(i).replace("] ","] "+nw(i));
+  return [`AX/PI그룹 주간업무 ${isoWeek(curWeek)} (회의 ${mi.date} ${mi.time}, ${mi.place})${A?" — 신규·진행 중 업무만":" — 완료 업무 포함"}`,"",
    "1. 그룹원 한 줄 공유",...config.members.map(m=>`- ${m}: ${s.oneLiners[m]||"-"}`),"",
    "2. 주간 지표",...s.metrics.map(m=>`- ${m.label}: ${m.value===null?"-":m.value+m.unit}${m.target!==""&&m.target!=null?` (목표 ${m.dir==="down"?"≤":"≥"}${m.target}${m.unit})`:""}${m.off?" ▲미달":""}`),"",
    `3. 분기 핵심과제 (${quarterOf(curWeek)})`,...(s.rocks.length?s.rocks.map(r=>`- ${r.title} [${r.status}] ${r.progress==null||r.progress===""?"-":r.progress+"%"} (${r.owner||"미지정"})`):["-"]),"",
    "4. 주간 공유사항",s.headlines||"-","",
-   "5. 이번 주 완료",...(s.done.length?s.done.map(line):["-"]),"",
-   "6. 진행 중 업무",...(s.open.length?s.open.map(line):["-"]),"",
-   "7. F/up · 이슈",...(s.fu.length?s.fu.map(line):["-"]),"",
+   ...(A?[]:["5. 이번 주 완료",...(s.done.length?s.done.map(line):["-"]),""]),
+   "6. 진행 중 업무",...(s.open.length?s.open.map(line2):["-"]),"",
+   "7. F/up · 이슈",...(s.fu.length?s.fu.map(line2):["-"]),"",
+   ...(A?[]:["※ 지난 완료 업무",...(s.pastDone.length?s.pastDone.map(i=>line(i)+(i.doneAt?" (완료 "+md(i.doneAt)+")":"")):["-"]),""]),
    "8. 결정사항",...(s.dec.length?s.dec.map(line):["-"]),"",
    "9. 전파·준비사항",s.closing||"-","",
    `회의 평가 평균: ${s.ratingAvg??"-"} / 10`].join("\n");
@@ -626,22 +660,26 @@ function minutesText(s){
 async function copyText(t){try{await navigator.clipboard.writeText(t);toast("복사했습니다")}catch(e){showText("복사할 내용",t)}}
 function showText(title,t){document.getElementById("layer").innerHTML=`<div class="scrim" data-close><div class="panel"><h3>${esc(title)}</h3><textarea style="min-height:60vh;border:1px solid var(--line);border-radius:4px;padding:10px;background:var(--surface);width:100%" id="txtOut" readonly>${esc(t)}</textarea><div class="panel-foot"><button class="btn" id="cpOut">복사</button><button class="btn" data-close>닫기</button></div></div></div>`;const ta=document.getElementById("txtOut");document.getElementById("cpOut").onclick=()=>copyText(ta.value);ta.focus()}
 
-function snapshotCouncil(){
+function snapshotCouncil(scope){
+  scope=scope||rscope;
   const all=list().filter(isCouncil),end=weekEnd(),c=cw();
-  const done=all.filter(i=>i.doneAt&&i.doneAt>=curWeek&&i.doneAt<=end&&i.type!=="decision").sort(sortItems);
+  const done=scope==="active"?[]:all.filter(i=>i.doneAt&&i.doneAt>=curWeek&&i.doneAt<=end&&i.type!=="decision").sort(sortItems);
+  const pastDone=scope==="active"?[]:pastDoneOf(all);
   const fu=all.filter(i=>isOpen(i)&&["fu","issue"].includes(i.type)).sort(sortItems);
   const open=all.filter(i=>isOpen(i)&&!["fu","issue","decision"].includes(i.type)).sort(sortItems);
   const dec=all.filter(i=>i.type==="decision"&&i.week===curWeek);
-  return {council:true,done,fu,open,dec,headlines:c.headlines||"",closing:c.closing||""};
+  return {council:true,scope,pastDone,done,fu,open,dec,headlines:c.headlines||"",closing:c.closing||""};
 }
 function minutesTextCouncil(s){
   s=s||snapshotCouncil();const ci=councilInfo();
   const line=i=>`- [${STATUS[i.status]}] ${i.title} (${i.owner||"미지정"}${i.contact?" / 컨택 "+i.contact:""}${i.due?" / ~"+md(i.due):""}${overdue(i)?" / 기한경과":""})${i.notes?"\n    "+i.notes.replace(/\n/g,"\n    "):""}`;
-  return [`AX/PI 협의체 회의 결과 ${isoWeek(curWeek)} (${ci.date}${ci.time?" "+ci.time:""}${ci.place?", "+ci.place:""})`,"",
+  const A=s.scope==="active", line2=i=>line(i).replace("] ","] "+(i.week===curWeek?"[신규] ":""));
+  return [`AX/PI 협의체 회의 결과 ${isoWeek(curWeek)} (${ci.date}${ci.time?" "+ci.time:""}${ci.place?", "+ci.place:""})${A?" — 신규·진행 중 업무만":" — 완료 업무 포함"}`,"",
    "1. 협의체 공유사항",s.headlines||"-","",
-   "2. 이번 협의체에서 완료",...(s.done.length?s.done.map(line):["-"]),"",
-   "3. F/up · 이슈",...(s.fu.length?s.fu.map(line):["-"]),"",
-   "4. 진행 중 협의체 업무",...(s.open.length?s.open.map(line):["-"]),"",
+   ...(A?[]:["2. 이번 협의체에서 완료",...(s.done.length?s.done.map(line):["-"]),""]),
+   "3. F/up · 이슈",...(s.fu.length?s.fu.map(line2):["-"]),"",
+   "4. 진행 중 협의체 업무",...(s.open.length?s.open.map(line2):["-"]),"",
+   ...(A?[]:["※ 지난 완료 협의체 업무",...(s.pastDone.length?s.pastDone.map(i=>line(i)+(i.doneAt?" (완료 "+md(i.doneAt)+")":"")):["-"]),""]),
    "5. 결정사항",...(s.dec.length?s.dec.map(line):["-"]),"",
    "6. 전파사항",s.closing||"-"].join("\n");
 }
@@ -706,80 +744,102 @@ const DOCX=(function(){
 
 function meetLabel(mi){const d=parse(mi.date);return `${d.getMonth()+1}.${pad(d.getDate())}(${DOW[d.getDay()]})`}
 function buildDocx(s){
+  let hn=0;const H=t=>DOCX.h1(`${++hn}. `+String(t).replace(/^\d+\. /,""));
   const {run,p,table,h1,build}=DOCX, mi=meetInfo();
   const G="6E6E73", b=[];
   const txt=(t,o)=>p(run(t,o));
   const label=t=>({c:txt(t,{b:true,sz:17,color:"46464B"}),shade:"F3F3F1"});
   b.push(p(run("AX/PI그룹 · Weekly Meeting Sheet",{sz:16,color:"86868B"}),{after:20}));
-  b.push(p(run("AX/PI그룹 주간업무 보고",{b:true,sz:36}),{after:160,border:true}));
+  b.push(p(run("AX/PI그룹 주간업무 보고",{b:true,sz:36}),{after:60,border:true}));
+  b.push(p(run(s.scope==="active"?"범위: 신규·진행 중 업무만 (완료 업무 제외)":"범위: 완료 업무 포함 (이번 주 완료 + 지난 완료)",{sz:16,color:"6E6E73"}),{after:140}));
   b.push(table([1900,2919,1900,2919],null,[
     [label("주차"),txt(isoWeek(curWeek)),label("회의 일시"),txt(`${meetLabel(mi)} ${mi.time}`)],
     [label("장소"),txt(mi.place),label("작성"),txt(nowStamp())],
     [label("진행 / 이번 주 완료"),txt(`${s.open.length+s.fu.length}건 / ${s.done.length}건`),label("기한 경과 / 회의 평가"),txt(`${list().filter(overdue).length}건 / ${s.ratingAvg??"–"}점`)]
   ]));
   const itemTable=arr=>arr.length?table([4038,800,1000,1600,1000,1200],["업무","유형","담당","컨택","기한","상태"],arr.map(i=>[
-    txt(i.title)+(i.notes?p(run(i.notes,{sz:16,color:G})):""),
+    txt((s.scope==="active"&&i.week===curWeek?"[신규] ":"")+i.title+(i.status==="done"&&i.doneAt&&i.doneAt<curWeek?` (완료 ${md(i.doneAt)})`:""))+(i.notes?p(run(i.notes,{sz:16,color:G})):""),
     txt(TYPES[i.type]||"",{sz:17}),txt(i.owner||"미지정",{sz:17}),txt(i.contact||"",{sz:17}),
     i.due?txt(md(i.due)+(overdue(i)?" 경과":""),{sz:17,b:overdue(i),u:overdue(i)}):txt(""),
     txt(STATUS[i.status],{sz:17,b:i.status==="check"})])):txt("없음",{color:G});
-  b.push(DOCX.h1("1. 그룹원 한 줄 공유"));
+  b.push(H("1. 그룹원 한 줄 공유"));
   b.push(table([1600,8038],null,config.members.map(m=>[label(m),txt(s.oneLiners[m]||"–")])));
-  b.push(DOCX.h1("2. 주간 지표"));
+  b.push(H("2. 주간 지표"));
   b.push(table([4038,1600,2000,2000],["지표","목표","지난 주","이번 주"],s.metrics.map(m=>[
     txt(m.label),txt(m.target!==""&&m.target!=null?(m.dir==="down"?"≤":"≥")+m.target+m.unit:"–"),
     txt(m.prev==null?"–":m.prev+m.unit),txt(m.value==null?"–":m.value+m.unit+(m.off?" (미달)":""),{b:m.off,u:m.off})])));
-  b.push(DOCX.h1(`3. 분기 핵심과제 (${quarterOf(curWeek)})`));
+  b.push(H(`3. 분기 핵심과제 (${quarterOf(curWeek)})`));
   b.push(s.rocks.length?table([4838,1600,1600,1600],["과제","담당","진척","상태"],s.rocks.map(r=>[
     txt(r.title),txt(r.owner||"미지정"),txt(r.progress==null||r.progress===""?"–":r.progress+"%"),txt(r.status,{b:r.status==="지연"})])):txt("없음",{color:G}));
-  b.push(DOCX.h1("4. 주간 공유사항"));b.push(txt(s.headlines||"–"));
-  b.push(DOCX.h1("5. 이번 주 완료"));b.push(itemTable(s.done));
-  b.push(DOCX.h1("6. F/up · 이슈"));b.push(itemTable(s.fu));
-  b.push(DOCX.h1("7. 진행 중 업무"));
+  b.push(H("4. 주간 공유사항"));b.push(txt(s.headlines||"–"));
+  if(s.scope!=="active"){b.push(H("5. 이번 주 완료"));b.push(itemTable(s.done))}
+  b.push(H("6. F/up · 이슈"));b.push(itemTable(s.fu));
+  b.push(H("7. 진행 중 업무"));
   const groups={};s.open.forEach(i=>{(groups[i.category||"미분류"]??=[]).push(i)});
   const cats=[...config.categories,"미분류",...Object.keys(groups)].filter((v,i,a)=>a.indexOf(v)===i&&groups[v]);
   if(!cats.length)b.push(txt("없음",{color:G}));
   cats.forEach(c=>{b.push(p(run(`■ ${c} (${groups[c].length})`,{b:true}),{keep:true,before:80}));b.push(itemTable(groups[c]))});
-  b.push(DOCX.h1("8. 결정사항"));
+  b.push(H("8. 결정사항"));
   if(s.dec.length)s.dec.forEach(i=>b.push(txt("• "+i.title)));else b.push(txt("없음",{color:G}));
-  b.push(DOCX.h1("9. 전파·준비사항"));b.push(txt(s.closing||"–"));
+  b.push(H("9. 전파·준비사항"));b.push(txt(s.closing||"–"));
+  if(s.scope!=="active"){b.push(H("10. 지난 완료 업무"));b.push(itemTable(s.pastDone))}
   b.push(p(run(`작성 ${nowStamp()} · AX/PI 주간업무 보드`,{sz:15,color:"86868B"}),{before:240,align:"right"}));
   return build(b.join(""),`AX/PI그룹 주간업무 ${isoWeek(curWeek)}`);
 }
 function buildDocxCouncil(s){
+  let hn=0;const H=t=>DOCX.h1(`${++hn}. `+String(t).replace(/^\d+\. /,""));
   const {run,p,table,build}=DOCX, ci=councilInfo();
   const G="6E6E73", b=[];
   const txt=(t,o)=>p(run(t,o));
   const label=t=>({c:txt(t,{b:true,sz:17,color:"46464B"}),shade:"F3F3F1"});
   const itemTable=arr=>arr.length?table([4038,800,1000,1600,1000,1200],["업무","유형","담당","컨택","기한","상태"],arr.map(i=>[
-    txt(i.title)+(i.notes?p(run(i.notes,{sz:16,color:G})):""),
+    txt((s.scope==="active"&&i.week===curWeek?"[신규] ":"")+i.title+(i.status==="done"&&i.doneAt&&i.doneAt<curWeek?` (완료 ${md(i.doneAt)})`:""))+(i.notes?p(run(i.notes,{sz:16,color:G})):""),
     txt(TYPES[i.type]||"",{sz:17}),txt(i.owner||"미지정",{sz:17}),txt(i.contact||"",{sz:17}),
     i.due?txt(md(i.due)+(overdue(i)?" 경과":""),{sz:17,b:overdue(i),u:overdue(i)}):txt(""),
     txt(STATUS[i.status],{sz:17,b:i.status==="check"})])):txt("없음",{color:G});
   b.push(p(run("AX/PI그룹 · AX/PI 협의체",{sz:16,color:"86868B"}),{after:20}));
-  b.push(p(run("AX/PI 협의체 회의 결과",{b:true,sz:36}),{after:160,border:true}));
+  b.push(p(run("AX/PI 협의체 회의 결과",{b:true,sz:36}),{after:60,border:true}));
+  b.push(p(run(s.scope==="active"?"범위: 신규·진행 중 업무만 (완료 업무 제외)":"범위: 완료 업무 포함 (이번 협의체 완료 + 지난 완료)",{sz:16,color:"6E6E73"}),{after:140}));
   b.push(table([1900,2919,1900,2919],null,[
     [label("주차"),txt(isoWeek(curWeek)),label("회의 일시"),txt(`${meetLabel(ci)}${ci.time?" "+ci.time:""}`)],
     [label("장소"),txt(ci.place||"–"),label("작성"),txt(nowStamp())],
     [label("F/up·업무 / 완료"),txt(`${s.fu.length+s.open.length}건 / ${s.done.length}건`),label("결정사항"),txt(`${s.dec.length}건`)]
   ]));
-  b.push(DOCX.h1("1. 협의체 공유사항"));b.push(txt(s.headlines||"–"));
-  b.push(DOCX.h1("2. 이번 협의체에서 완료"));b.push(itemTable(s.done));
-  b.push(DOCX.h1("3. F/up · 이슈"));b.push(itemTable(s.fu));
-  b.push(DOCX.h1("4. 진행 중 협의체 업무"));b.push(itemTable(s.open));
-  b.push(DOCX.h1("5. 결정사항"));
+  b.push(H("1. 협의체 공유사항"));b.push(txt(s.headlines||"–"));
+  if(s.scope!=="active"){b.push(H("2. 이번 협의체에서 완료"));b.push(itemTable(s.done))}
+  b.push(H("3. F/up · 이슈"));b.push(itemTable(s.fu));
+  b.push(H("4. 진행 중 협의체 업무"));b.push(itemTable(s.open));
+  b.push(H("5. 결정사항"));
   if(s.dec.length)s.dec.forEach(i=>b.push(txt("• "+i.title)));else b.push(txt("없음",{color:G}));
-  b.push(DOCX.h1("6. 전파사항"));b.push(txt(s.closing||"–"));
+  b.push(H("6. 전파사항"));b.push(txt(s.closing||"–"));
+  if(s.scope!=="active"){b.push(H("7. 지난 완료 협의체 업무"));b.push(itemTable(s.pastDone))}
   b.push(p(run(`작성 ${nowStamp()} · AX/PI 주간업무 보드`,{sz:15,color:"86868B"}),{before:240,align:"right"}));
   return build(b.join(""),`AX/PI 협의체 ${ci.date}`);
 }
-async function saveReport(){
-  if(mode==="council")return saveCouncilReport();
+function saveReport(){
+  const C=mode==="council";
+  document.getElementById("layer").innerHTML=`<div class="scrim" data-close><form class="panel" id="svForm" role="dialog" aria-label="회의록 저장 범위">
+    <h3>${C?"협의체 회의록":"금주 주간업무"} 저장 (Word)</h3>
+    <p class="status-line">보고서에 담을 업무 범위를 고르세요. 마지막 선택은 다음에도 기억합니다.</p>
+    <div class="scope">
+      <label><input type="radio" name="scope" value="all" ${rscope!=="active"?"checked":""}><div><b>완료 업무 포함</b><span>${C?"이번 협의체 완료":"이번 주 완료"}와 지난 완료 업무까지 모두 담습니다. 기록·보관용</span></div></label>
+      <label><input type="radio" name="scope" value="active" ${rscope==="active"?"checked":""}><div><b>신규·진행 중 업무만</b><span>완료 업무는 빼고, 이번 주 새로 생긴 업무에는 [신규] 표시를 붙입니다. 공유·보고용</span></div></label>
+    </div>
+    <div class="panel-foot"><button type="button" class="btn" data-close>닫기</button><button class="btn save">Word로 저장</button></div>
+  </form></div>`;
+  document.getElementById("svForm").addEventListener("submit",e=>{
+    e.preventDefault();rscope=new FormData(e.target).get("scope")==="active"?"active":"all";
+    try{localStorage.setItem("axpi-rscope",rscope)}catch(_){}
+    closeLayer();C?saveCouncilReport():saveWeeklyReport();
+  });
+}
+async function saveWeeklyReport(){
   const s=snapshot();const text=minutesText(s);
   const btns=[...document.querySelectorAll("[data-act=saveReport],#btnSave")];btns.forEach(b=>{b.disabled=true});
   toast("주간업무를 보관하고 Word 파일을 만드는 중…");
   const compact=i=>({id:i.id,title:i.title,type:i.type,category:i.category||"",owner:i.owner||"",contact:i.contact||"",status:i.status,due:i.due||"",notes:(i.notes||"").slice(0,400)});
   const mi=meetInfo();
-  const rec={week:curWeek,isoWeek:isoWeek(curWeek),savedAt:nowStamp(),meeting:mi,text,ratingAvg:s.ratingAvg,
+  const rec={week:curWeek,isoWeek:isoWeek(curWeek),savedAt:nowStamp(),scope:s.scope,meeting:mi,text,ratingAvg:s.ratingAvg,
     counts:{open:s.open.length+s.fu.length,done:s.done.length,overdue:list().filter(overdue).length,decisions:s.dec.length},
     metrics:s.metrics,rocks:s.rocks,oneLiners:s.oneLiners,headlines:s.headlines,closing:s.closing,
     done:s.done.map(compact),fu:s.fu.map(compact),open:s.open.map(compact),decisions:s.dec.map(compact)};
@@ -788,7 +848,7 @@ async function saveReport(){
   try{
     if(!downloads)throw {code:"unavailable"};
     const blob=buildDocx(s);
-    await downloads.save({filename:`AXPI_주간업무_${isoWeek(curWeek)}.docx`,data:blob});
+    await downloads.save({filename:`AXPI_주간업무_${isoWeek(curWeek)}${s.scope==="active"?"_진행중":""}.docx`,data:blob});
     toast(archived?"보관함에 저장하고 Word 파일을 내려받았습니다":"Word 파일을 내려받았습니다");
   }catch(e){
     if(e&&e.code==="declined")toast(archived?"보관함에는 저장했습니다. Word 저장은 취소했습니다.":"Word 저장을 취소했습니다.");
@@ -801,14 +861,14 @@ async function saveCouncilReport(){
   const btns=[...document.querySelectorAll("[data-act=saveReport],#btnSave")];btns.forEach(b=>{b.disabled=true});
   toast("협의체 회의록을 보관하고 Word 파일을 만드는 중…");
   const compact=i=>({id:i.id,title:i.title,type:i.type,category:i.category||"",owner:i.owner||"",contact:i.contact||"",status:i.status,due:i.due||"",notes:(i.notes||"").slice(0,400)});
-  const rec={week:curWeek,isoWeek:isoWeek(curWeek),meetingType:"council",savedAt:nowStamp(),meeting:ci,text,
+  const rec={week:curWeek,isoWeek:isoWeek(curWeek),meetingType:"council",savedAt:nowStamp(),scope:s.scope,meeting:ci,text,
     counts:{open:s.open.length+s.fu.length,done:s.done.length,decisions:s.dec.length},headlines:s.headlines,closing:s.closing,
     done:s.done.map(compact),fu:s.fu.map(compact),open:s.open.map(compact),decisions:s.dec.map(compact)};
   let archived=false;
   if(db){try{await db.doc("reports/"+curWeek+"-c").set(rec);archived=true}catch(e){fail(e)}}
   try{
     if(!downloads)throw {code:"unavailable"};
-    await downloads.save({filename:`AXPI_협의체_${ci.date}.docx`,data:buildDocxCouncil(s)});
+    await downloads.save({filename:`AXPI_협의체_${ci.date}${s.scope==="active"?"_진행중":""}.docx`,data:buildDocxCouncil(s)});
     toast(archived?"보관함에 저장하고 Word 파일을 내려받았습니다":"Word 파일을 내려받았습니다");
   }catch(e){
     if(e&&e.code==="declined")toast(archived?"보관함에는 저장했습니다. Word 저장은 취소했습니다.":"Word 저장을 취소했습니다.");
@@ -988,8 +1048,10 @@ V.addEventListener("click",e=>{
   const row=act.closest(".row");const a=act.dataset.act;
   if(row){const id=row.dataset.id,it=items.get(id);
     if(a==="toggle"&&writable)setStatus(id,it.status==="done"?"doing":"done");
-    if(a==="edit")openEditor(it);return}
+    if(a==="edit")openEditor(it);
+    if(a==="move"&&writable)moveItem(id,act.dataset.to);return}
   if(a==="saveReport")saveReport();
+  if(a==="hideDone"){const k=act.dataset.key;hideDone[k]=!hideDone[k];try{localStorage.setItem("axpi-hide",JSON.stringify(hideDone))}catch(e){}render()}
   if(a==="rm"){const k=act.dataset.key,i=+act.dataset.i;const arr=[...(config[k]||[])];arr.splice(i,1);saveConfig({...config,[k]:arr})}
   if(a==="rmRock"){const id=act.dataset.id;rocks.delete(id);render();serial("rocks/"+id,()=>db.doc("rocks/"+id).delete())}
   if(a==="viewRep"){const r=reports.find(x=>x.id===act.dataset.id);if(r)showText(r.isoWeek+(r.meetingType==="council"?" 협의체":" 주간업무")+" (저장 "+r.savedAt+")",r.text||"")}
