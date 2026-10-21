@@ -165,6 +165,8 @@ table.sc{border-collapse:collapse;width:100%;min-width:560px;font-size:13.5px}
 .sc td.v{font-variant-numeric:tabular-nums}
 .sc td.off{color:var(--ink);font-weight:700;text-decoration:underline;text-underline-offset:3px}
 .sc input{width:76px;text-align:right;border:1px solid var(--line);border-radius:8px;padding:3px 8px;background:var(--surface);font-variant-numeric:tabular-nums}
+.sc input.past{width:64px;background:transparent;border-color:transparent;border-bottom:1px dashed var(--line);border-radius:0;color:var(--ink2)}
+.sc input.past:focus{border:1px solid var(--ink);border-radius:8px;background:var(--surface)}
 .sc input.off{border-color:var(--ink);font-weight:700}
 .sc .mact{white-space:nowrap;text-align:right}
 .sc .mact button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:1px 9px;font-size:11.5px;color:var(--ink2);margin-left:4px}
@@ -212,6 +214,8 @@ table.sc{border-collapse:collapse;width:100%;min-width:560px;font-size:13.5px}
 .calbtn:hover{background:var(--ink);color:var(--surface)}
 .calbtn svg{width:14px;height:14px}
 .panel.cal{width:min(1080px,100%);gap:10px}
+.panel>*{flex-shrink:0}
+.panel{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .cal-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .cal-h h3{min-width:140px}
 .cal-h .nav button{border:1px solid var(--line);background:var(--surface);border-radius:999px;width:28px;height:28px;color:var(--ink2)}
@@ -241,7 +245,7 @@ table.sc{border-collapse:collapse;width:100%;min-width:560px;font-size:13.5px}
 .mtg.w.done{background:var(--ink);color:var(--surface)}
 .mtg.w.plan{border:1.5px dashed var(--ink);color:var(--ink);line-height:14px}
 .mtg.c.done{background:#8a8a85;color:#fff}
-.mtg.c.plan{border:1.5px dashed #8a8a85;color:#5c5c58;line-height:14px}
+.mtg.c.plan{background:#ebebe8;color:#5c5c58}
 .ev{font-size:11px;line-height:16px;display:flex;gap:4px;align-items:center;min-width:0;color:var(--ink2)}
 .ev .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .ev.done .t{text-decoration:line-through;color:var(--muted)}
@@ -517,7 +521,8 @@ function scorecardHTML(){
   const hiddenM=allMetrics().filter(m=>m.hidden);
   const list_=showHiddenMetrics?allMetrics():visibleMetrics();
   const body=list_.map(m=>{
-    const past=ws.map(w=>{const v=metricVal(m,w);return `<td class="v ${isOff(m,v)?"off":""}">${v===null?"—":v+esc(m.unit||"")}</td>`}).join("");
+    const past=ws.map(w=>{const v=metricVal(m,w);return m.auto||!writable?`<td class="v ${isOff(m,v)?"off":""}">${v===null?"—":v+esc(m.unit||"")}</td>`
+      :`<td><input type="number" step="any" class="past ${isOff(m,v)?"off":""}" data-wk="metric" data-key="${esc(m.key)}" data-week="${w}" value="${v===null?"":v}" placeholder="—" aria-label="${esc(m.label)} ${md(w)} 주 값"></td>`}).join("");
     const cur=metricVal(m,curWeek);
     const tgt=m.target===""||m.target===undefined||m.target===null?"—":(m.dir==="down"?"≤":"≥")+m.target+esc(m.unit||"");
     const curCell=m.auto?`<td class="v ${isOff(m,cur)?"off":""}">${cur===null?"—":cur+"%"} <span class="auto">자동</span></td>`
@@ -628,10 +633,10 @@ function renderWeekly(){
    ${sec("04","주간 공유사항","일정·보고·공지 등 헤드라인",`<textarea class="note" data-wk="text" data-key="headlines" placeholder="예) 주요 일정·보고·공지" ${ro}>${esc(w.headlines||"")}</textarea>`)}
    ${sec("05","AX/PI 그룹 업무 List",`지난 업무·이번 주 신규·다음 주 할 일 · ${groupList.filter(isOpen).length}건 진행`,rows(groupList,"등록된 업무가 없습니다. 아래에서 바로 추가하세요.","w05",["fu","decision","metric"])+qa("task"),"",hideBtn("w05"))}
    ${sec("06","F/up · 이슈","컨택 대상과 함께 해결방안 논의",rows(fuIssue,"열려 있는 F/up·이슈가 없습니다.","w06",["task","decision","metric"])+qa("fu"),"",hideBtn("w06"))}
-   ${sec("07","결정사항 · 마무리","",rows(decisions,"이번 주 결정사항을 기록하세요.")+qa("decision")+
-      (recentDec.length?`<div class="grp-h"><span>최근 결정사항</span><span class="mono">${recentDec.length}</span></div>`+recentDec.map(rowHTML).join(""):"")+
+   ${sec("07","결정사항 · 마무리","",rows(decisions,"이번 주 결정사항을 기록하세요.","w07")+qa("decision")+
+      (recentDec.length&&!hideDone.w07?`<div class="grp-h"><span>최근 결정사항</span><span class="mono">${recentDec.length}</span></div>`+recentDec.map(rowHTML).join(""):"")+
       `<textarea class="note" data-wk="text" data-key="closing" placeholder="전파사항, 다음 회의 전 준비할 것" ${ro}>${esc(w.closing||"")}</textarea>
-      <div class="rate" style="justify-content:flex-end"><span class="status-line">${(reports.find(r=>r.id===curWeek)||{}).savedAt?"마지막 저장 "+esc(reports.find(r=>r.id===curWeek).savedAt):"아직 저장하지 않았습니다"}</span><button class="btn save" data-act="saveReport">금주 주간업무 저장 (Word)</button></div>`)}
+      <div class="rate" style="justify-content:flex-end"><span class="status-line">${(reports.find(r=>r.id===curWeek)||{}).savedAt?"마지막 저장 "+esc(reports.find(r=>r.id===curWeek).savedAt):"아직 저장하지 않았습니다"}</span><button class="btn save" data-act="saveReport">금주 주간업무 저장 (Word)</button></div>`,"",hideBtn("w07"))}
   </div>`;
 }
 
@@ -650,10 +655,10 @@ function renderCouncil(){
    ${sec("01","협의체 공유사항","상정 안건·전달받은 내용",`<textarea class="note" data-wk="ctext" data-key="headlines" placeholder="예) To-Be 체크리스트 배포, Mega과제 일정 공유…" ${ro}>${esc(c.headlines||"")}</textarea>`)}
    ${sec("02","협의체 F/up · 이슈",`체크하면 완료로 기록 · ${fu.filter(isOpen).length}건 남음`,rows(fu,"열려 있는 협의체 F/up·이슈가 없습니다.","c02",["task","decision"])+qa("fu"),"",hideBtn("c02"))}
    ${sec("03","협의체 업무","",rows(tasks,"진행 중인 협의체 업무가 없습니다.","c03",["fu","decision"])+qa("task"),"",hideBtn("c03"))}
-   ${sec("04","결정사항 · 전파사항","",rows(dec,"이번 협의체 결정사항을 기록하세요.")+qa("decision")+
-      (recentDec.length?`<div class="grp-h"><span>최근 협의체 결정사항</span><span class="mono">${recentDec.length}</span></div>`+recentDec.map(rowHTML).join(""):"")+
+   ${sec("04","결정사항 · 전파사항","",rows(dec,"이번 협의체 결정사항을 기록하세요.","c04")+qa("decision")+
+      (recentDec.length&&!hideDone.c04?`<div class="grp-h"><span>최근 협의체 결정사항</span><span class="mono">${recentDec.length}</span></div>`+recentDec.map(rowHTML).join(""):"")+
       `<textarea class="note" data-wk="ctext" data-key="closing" placeholder="그룹 내 전파사항, 주간회의에서 다룰 것" ${ro}>${esc(c.closing||"")}</textarea>
-      <div class="rate" style="justify-content:flex-end"><span class="status-line">${rep?"마지막 저장 "+esc(rep.savedAt):"아직 저장하지 않았습니다"}</span><button class="btn save" data-act="saveReport">협의체 회의록 저장 (Word)</button></div>`)}
+      <div class="rate" style="justify-content:flex-end"><span class="status-line">${rep?"마지막 저장 "+esc(rep.savedAt):"아직 저장하지 않았습니다"}</span><button class="btn save" data-act="saveReport">협의체 회의록 저장 (Word)</button></div>`,"",hideBtn("c04"))}
   </div>`;
 }
 
@@ -748,8 +753,9 @@ function openMetricEditor(m,fromItem){
       <div class="f"><label for="m_unit">단위</label><input id="m_unit" name="unit" value="${esc(m.unit||"")}" placeholder="%, 명, 건"></div>
       <div class="f"><label for="m_target">목표값</label><input id="m_target" name="target" type="number" step="any" value="${m.target===""||m.target==null?"":esc(m.target)}"></div>
       <div class="f"><label for="m_dir">방향</label><select id="m_dir" name="dir"><option value="up" ${m.dir!=="down"?"selected":""}>높을수록 좋음</option><option value="down" ${m.dir==="down"?"selected":""}>낮을수록 좋음</option></select></div>
-      <div class="f"><label for="m_now">이번 주 값</label><input id="m_now" name="now" type="number" step="any" value="${(()=>{const v=metricVal(m,curWeek);return v===null?"":v})()}"></div>
     </div>
+    <div class="f"><label>주차별 값 <span class="auto">· 지난 주 값도 입력·수정할 수 있습니다</span></label>
+      <table class="rlog"><thead><tr><th>주차</th><th style="text-align:right">값</th></tr></thead><tbody>${[7,6,5,4,3,2,1,0].map(n=>addDays(curWeek,-7*n)).map(w=>{const v=isNew?null:metricVal(m,w);return `<tr class="${w===curWeek?"cur":""}"><td>${isoWeek(w).slice(5)} <span class="auto">${md(w)}~${md(addDays(w,6))}</span>${w===curWeek?' <span class="auto">· 보고 있는 주</span>':""}</td><td class="n"><input type="number" step="any" name="wv_${w}" value="${v===null?"":v}" aria-label="${isoWeek(w)} 값"></td></tr>`}).join("")}</tbody></table></div>
     ${fromItem?`<label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink2)"><input type="checkbox" name="closeItem" checked> 원래 업무는 완료 처리해 목록에서 빼기 (메모에 이관 기록)</label>`:""}
     <div class="panel-foot">
       <span id="mDelZone">${isNew?"":`<button type="button" class="btn danger" id="mDel">삭제</button>`}</span>
@@ -765,8 +771,7 @@ function openMetricEditor(m,fromItem){
     const arr=[...(config.metrics||[])];const ix=arr.findIndex(x=>x.key===m.key);
     if(ix>=0)arr[ix]=next;else arr.push(next);
     saveConfig({...config,metrics:arr});
-    const nv=String(fd.get("now")||"");
-    if(nv!==""||metricVal(m,curWeek)!==null)patchWeek({metrics:{[next.key]:nv===""?null:Number(nv)}});
+    [7,6,5,4,3,2,1,0].map(n=>addDays(curWeek,-7*n)).forEach(w=>{const nv=String(fd.get("wv_"+w)??"");const old=isNew?null:metricVal(m,w);const nvv=nv===""?null:Number(nv);if(nvv!==old)patchWeek({metrics:{[next.key]:nvv}},w)});
     if(fromItem&&fd.get("closeItem")){
       const it={...fromItem,status:"done",doneAt:fromItem.doneAt||iso(today),updatedAt:iso(today)};
       it.notes=(it.notes?it.notes+"\n":"")+`[${md(iso(today))}] 지표로 이관 (${next.label})`;
@@ -1304,7 +1309,7 @@ function onChange(e){
     else if(t.dataset.ract==="cum"){const lg={...(r.log||{})};if(t.value==="")delete lg[curWeek];else lg[curWeek]=Number(t.value);r.log=lg;r.progress=rockPct(r,"9999-12-31");if(r.progress===100)r.status="done"}
     else r.status=t.value;
     r.updatedAt=iso(today);t.blur();saveRock(r);return}
-  if(t.dataset.wk==="metric"){const v=t.value===""?null:Number(t.value);patchWeek({metrics:{[t.dataset.key]:v}});t.blur();render();return}
+  if(t.dataset.wk==="metric"){const v=t.value===""?null:Number(t.value);patchWeek({metrics:{[t.dataset.key]:v}},t.dataset.week||curWeek);t.blur();render();if(t.dataset.week)toast(md(t.dataset.week)+" 주 값을 저장했습니다");return}
   if(t.dataset.wk==="rate"){patchWeek({ratings:{[t.dataset.key]:t.value===""?null:Number(t.value)}});t.blur();render();return}
   const map={fstatus:"status",fcat:"cat",fowner:"owner",ftype:"type",fmt:"mt"};if(map[t.id]){filt[map[t.id]]=t.value;render()}
 }
@@ -1354,6 +1359,8 @@ function meetingsIn(from,to){
   list().forEach(it=>{const s=srcDate(it);if(s)add(s.date,s.kind,{wk:mondayOf(parse(s.date))})});
   let w=mondayOf(today);
   for(let i=0;i<80;i++){const mi=meetInfo(w);if(mi.date>to)break;if(mi.date>=T)add(mi.date,"w",{time:mi.time||"",place:mi.place||"",wk:w,proj:!(weeks[w]&&weeks[w].meetDate)});w=addDays(w,7)}
+  w=mondayOf(today);
+  for(let i=0;i<80;i++){const ci=councilInfo(w);if(ci.date>to)break;if(ci.date>=T)add(ci.date,"c",{time:ci.time||"",place:ci.place||"",wk:w});w=addDays(w,7)}
   out.forEach((a,d)=>{a.forEach(x=>{x.state=d<T||(d===T&&reports.some(r=>r.week===x.wk&&(r.meetingType==="council")===(x.kind==="c")))?"done":"plan"});a.sort((p,q)=>p.kind.localeCompare(q.kind)).reverse()});
   return out;
 }
@@ -1399,7 +1406,7 @@ function renderCal(){
       <span style="margin-left:auto" class="cal-f"><span class="seg" role="group" aria-label="회의 구분">${[["all","전체"],["weekly","주간회의"],["council","협의체"]].map(([k,v])=>`<button type="button" data-cmt="${k}" aria-pressed="${calMt===k}">${v}</button>`).join("")}</span>
       <button type="button" class="hidebtn" data-chd aria-pressed="${calHideDone}">${calHideDone?"완료 보기":"완료 숨김"}</button><button type="button" class="btn sm" data-close>닫기</button></span></div>
     <div class="cal-sum">이번 달 마감 <b>${monthIts.length}</b>건 (진행 ${monthIts.length-nDone-nOver} · 기한 경과 ${nOver} · 완료 ${nDone}) · 주간회의 ${cntW}회${cntC?` · 협의체 ${cntC}회`:""}</div>
-    <div class="cal-leg"><span><i class="mtg w done" style="width:22px;height:12px"></i>주간회의(지난)</span><span><i class="mtg w plan" style="width:22px;height:12px;box-sizing:border-box"></i>주간회의(예정)</span><span><i class="mtg c done" style="width:22px;height:12px"></i>협의체</span><span><i class="mk"></i>진행 중 마감</span><span><i class="mk check"></i>확인필요</span><span><i class="mk over"></i>기한 경과</span><span><i class="mk done"></i>완료</span><span>날짜를 누르면 아래에 목록 · 왼쪽 주차를 누르면 그 주 회의로 이동</span></div>
+    <div class="cal-leg"><span><i class="mtg w done" style="width:22px;height:12px"></i>주간회의(지난)</span><span><i class="mtg w plan" style="width:22px;height:12px;box-sizing:border-box"></i>주간회의(예정)</span><span><i class="mtg c done" style="width:22px;height:12px"></i>협의체(지난)</span><span><i class="mtg c plan" style="width:22px;height:12px"></i>협의체(예정)</span><span><i class="mk"></i>진행 중 마감</span><span><i class="mk check"></i>확인필요</span><span><i class="mk over"></i>기한 경과</span><span><i class="mk done"></i>완료</span><span>날짜를 누르면 아래에 목록 · 왼쪽 주차를 누르면 그 주 회의로 이동</span></div>
     <div class="cg">${cells}</div>
     ${dayHTML}
   </div></div>`;
@@ -1453,7 +1460,7 @@ render();
     :"데이터는 이 기기에만 저장됩니다. 처음에는 ‘백업 가져오기’로 데이터를 넣고, 회의 후에는 ‘백업 내보내기’로 파일을 남겨 주세요.";
 })();
 </script>
-<script>window.__APPVER__='2026.10.21-1403';</script>
+<script>window.__APPVER__='2026.10.21-1420';</script>
 <script>(function(){
   var V=window.__APPVER__||"";
   function stamp(){var d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")}
