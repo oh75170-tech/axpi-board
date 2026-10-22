@@ -398,6 +398,7 @@ let items=new Map(), config=DEFAULT_CONFIG, weeks={}, rocks=new Map(), reports=[
 let view="meet";
 let hideDone={};try{hideDone=JSON.parse(localStorage.getItem("axpi-hide")||"{}")||{}}catch(e){}
 let rscope="all";try{rscope=localStorage.getItem("axpi-rscope")||"all"}catch(e){}
+let withBk=true;try{withBk=localStorage.getItem("axpi-withbk")!=="0"}catch(e){}
 let mode="weekly";try{if(localStorage.getItem("axpi-mode")==="council")mode="council"}catch(e){}
 const filt={cat:"",owner:"",status:"open",type:"",q:"",mt:""};
 const today=new Date(); today.setHours(0,0,0,0);
@@ -1091,12 +1092,13 @@ function saveReport(){
       <label><input type="radio" name="scope" value="all" ${rscope!=="active"?"checked":""}><div><b>완료 업무 포함</b><span>${C?"이번 협의체 완료":"이번 주 완료"}와 지난 완료 업무까지 모두 담습니다. 기록·보관용</span></div></label>
       <label><input type="radio" name="scope" value="active" ${rscope==="active"?"checked":""}><div><b>신규·진행 중 업무만</b><span>완료 업무는 빼고, 이번 주 새로 생긴 업무에는 [신규] 표시를 붙입니다. 공유·보고용</span></div></label>
     </div>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink2)"><input type="checkbox" name="withBk" ${withBk?"checked":""}> 보드 백업 파일(JSON)도 함께 받기</label>
     <div class="panel-foot"><button type="button" class="btn" data-close>닫기</button><button class="btn save">Word로 저장</button></div>
   </form></div>`;
   document.getElementById("svForm").addEventListener("submit",e=>{
-    e.preventDefault();rscope=new FormData(e.target).get("scope")==="active"?"active":"all";
-    try{localStorage.setItem("axpi-rscope",rscope)}catch(_){}
-    closeLayer();C?saveCouncilReport():saveWeeklyReport();
+    e.preventDefault();const fd=new FormData(e.target);rscope=fd.get("scope")==="active"?"active":"all";withBk=!!fd.get("withBk");
+    try{localStorage.setItem("axpi-rscope",rscope);localStorage.setItem("axpi-withbk",withBk?"1":"0")}catch(_){}
+    closeLayer();Promise.resolve(C?saveCouncilReport():saveWeeklyReport()).then(()=>{if(withBk)setTimeout(()=>exportBackup(C?"협의체후":"주간회의후"),1500)});
   });
 }
 async function saveWeeklyReport(){
@@ -1461,6 +1463,89 @@ document.getElementById("layer").addEventListener("click",e=>{
   if(t.closest("[data-act=edit]"))calResume=true;
 });
 
+/* ---------- 온라인 보드 백업 내보내기·합치는 가져오기 ---------- */
+function stamp8(){const d=new Date();return d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+"_"+pad(d.getHours())+pad(d.getMinutes())}
+function boardData(){
+  if(window.__AXPI_LOCAL__)return window.__AXPI_LOCAL__.get();
+  const o={items:{},weeks:{},rocks:{},reports:{},config:{main:config},_ver:nowStamp(),_from:"online"};
+  items.forEach((v,k)=>o.items[k]=v);rocks.forEach((v,k)=>o.rocks[k]=v);
+  Object.keys(weeks).forEach(k=>o.weeks[k]=weeks[k]);reports.forEach(r=>{const {id,...rest}=r;o.reports[id]=rest});
+  return o;
+}
+async function saveFile(filename,text){
+  if(window.__AXPI_LOCAL__)return window.__AXPI_LOCAL__.save({filename,data:text});
+  if(!downloads)throw {code:"unavailable"};
+  return downloads.save({filename,data:new Blob([text],{type:"application/json"})});
+}
+async function exportBackup(tag){
+  try{await saveFile(`AXPI_보드백업_${tag?tag+"_":""}${stamp8()}.json`,JSON.stringify(boardData(),null,1));toast("백업 파일을 내려받았습니다")}
+  catch(e){toast("백업 파일을 저장하지 못했습니다")}
+}
+const tsOf=x=>String((x&&(x.updatedAt||x.savedAt))||"");
+function planMerge(inc){
+  const P={add:[],upd:[],keep:0,rocksAdd:[],rocksUpd:[],weekFill:{},weekConflict:0,repAdd:[],cfg:null};
+  const II=inc.items||{};
+  Object.keys(II).forEach(id=>{const a=II[id],b=items.get(id);if(!b)P.add.push(a);else if(JSON.stringify(a)!==JSON.stringify({...b,id:b.id})){if(tsOf(a)>tsOf(b))P.upd.push(a);else P.keep++}});
+  const RR=inc.rocks||{};
+  Object.keys(RR).forEach(id=>{const a=RR[id],b=rocks.get(id);if(!b)P.rocksAdd.push(a);else if(JSON.stringify(a)!==JSON.stringify(b)&&tsOf(a)>tsOf(b))P.rocksUpd.push(a)});
+  const fill=(cur,src,path,out)=>{let n=0;Object.keys(src||{}).forEach(k=>{const v=src[k],c=cur?cur[k]:undefined;
+      if(v===null||v===undefined||v==="")return;
+      if(v&&typeof v==="object"&&!Array.isArray(v)){const sub={};n+=fill(c||{},v,path+k+".",sub);if(Object.keys(sub).length)out[k]=sub}
+      else if(c===undefined||c===null||c===""){out[k]=v;n++}
+      else if(JSON.stringify(c)!==JSON.stringify(v))P.weekConflict++});return n};
+  Object.keys(inc.weeks||{}).forEach(w=>{const out={};if(fill(weeks[w]||{},inc.weeks[w],"",out))P.weekFill[w]=out});
+  Object.keys(inc.reports||{}).forEach(id=>{const a=inc.reports[id],b=reports.find(r=>r.id===id);if(!b||String(a.savedAt||"")>String(b.savedAt||""))P.repAdd.push([id,a])});
+  const ic=(inc.config||{}).main;
+  if(ic){const u=(a,b)=>[...new Set([...(a||[]),...(b||[])])];const byKey=(a,b)=>{const m=new Map((a||[]).map(x=>[x.key,x]));(b||[]).forEach(x=>{if(!m.has(x.key))m.set(x.key,x)});return [...m.values()]};
+    const next={...config,categories:u(config.categories,ic.categories),members:u(config.members,ic.members),contacts:u(config.contacts,ic.contacts),metrics:byKey(config.metrics,ic.metrics),customFields:byKey(config.customFields,ic.customFields)};
+    if(JSON.stringify(next)!==JSON.stringify(config))P.cfg=next}
+  return P;
+}
+function openImport(){
+  if(!writable)return toast("보기 전용입니다");
+  const f=document.createElement("input");f.type="file";f.accept=".json,application/json";
+  f.onchange=()=>{const file=f.files[0];if(!file)return;const r=new FileReader();r.onload=()=>{let inc;try{inc=JSON.parse(r.result);if(!inc||!inc.items)throw 0}catch(e){return toast("AX/PI 보드 백업 파일이 아닙니다")}
+    const P=planMerge(inc), nW=Object.keys(P.weekFill).length;
+    const total=P.add.length+P.upd.length+P.rocksAdd.length+P.rocksUpd.length+nW+P.repAdd.length+(P.cfg?1:0);
+    document.getElementById("layer").innerHTML=`<div class="scrim" data-close><div class="panel" id="impPop" role="dialog" aria-label="백업 합치기">
+      <h3>백업 합치기</h3>
+      <p class="status-line">${esc(file.name)}${inc._ver?" · 데이터 "+esc(inc._ver):""}</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.7">온라인 보드를 지우지 않고 합칩니다. 같은 업무는 <b>더 최근에 고친 쪽</b>을 남기고, 온라인에만 있는 내용은 그대로 둡니다. 합치기 전에 지금 온라인 내용을 백업 파일로 먼저 내려받습니다.</p>
+      <table class="rlog"><tbody>
+        <tr><td>새로 들어올 업무</td><td class="n">${P.add.length}건</td></tr>
+        <tr><td>더 최근 내용으로 바뀔 업무</td><td class="n">${P.upd.length}건</td></tr>
+        <tr><td>온라인이 더 최근이라 그대로 둘 업무</td><td class="n">${P.keep}건</td></tr>
+        <tr><td>분기 핵심과제 (추가·갱신)</td><td class="n">${P.rocksAdd.length+P.rocksUpd.length}건</td></tr>
+        <tr><td>회의 메모·지표 빈칸 채우기</td><td class="n">${nW}개 주</td></tr>
+        <tr><td>서로 달라 온라인 값을 유지할 칸</td><td class="n">${P.weekConflict}칸</td></tr>
+        <tr><td>저장본(회의록) 추가·갱신</td><td class="n">${P.repAdd.length}건</td></tr>
+        <tr><td>설정(분류·그룹원·컨택·지표) 추가</td><td class="n">${P.cfg?"있음":"없음"}</td></tr>
+      </tbody></table>
+      ${P.upd.length?`<div class="status-line">바뀔 업무: ${P.upd.slice(0,8).map(i=>esc(i.title)).join(", ")}${P.upd.length>8?" 외 "+(P.upd.length-8)+"건":""}</div>`:""}
+      <div class="panel-foot"><button type="button" class="btn" data-close>닫기</button>${total?`<button type="button" class="btn primary" id="impGo">백업 후 합치기</button>`:`<span class="status-line">합칠 내용이 없습니다</span>`}</div>
+    </div></div>`;
+    const go=document.getElementById("impGo");
+    if(go)go.onclick=async()=>{go.disabled=true;go.textContent="합치는 중…";
+      try{await saveFile(`AXPI_보드백업_합치기전_${stamp8()}.json`,JSON.stringify(boardData(),null,1))}catch(e){go.disabled=false;go.textContent="백업 후 합치기";return toast("먼저 받을 백업을 저장하지 못해 멈췄습니다")}
+      try{
+        for(const it of [...P.add,...P.upd]){items.set(it.id,it);await db.doc("items/"+it.id).set(it)}
+        for(const rk of [...P.rocksAdd,...P.rocksUpd]){rocks.set(rk.id,rk);await db.doc("rocks/"+rk.id).set(rk)}
+        for(const w of Object.keys(P.weekFill))await patchWeek(P.weekFill[w],w);
+        for(const [id,rp] of P.repAdd)await db.doc("reports/"+id).set(rp);
+        if(P.cfg)await saveConfig(P.cfg);
+        closeLayer();render();toast(`합쳤습니다 · 업무 ${P.add.length+P.upd.length}건, 주 ${nW}개`);
+      }catch(e){toast("일부를 합치지 못했습니다. 다시 시도해 주세요");go.disabled=false;go.textContent="백업 후 합치기"}
+    };
+  };r.readAsText(file)};
+  f.click();
+}
+if(!window.__AXPI_LOCAL__){
+  const acts=document.querySelector(".actions");
+  const mk=(label,fn)=>{const b=document.createElement("button");b.className="btn";b.type="button";b.textContent=label;b.onclick=fn;acts.insertBefore(b,acts.firstChild);return b};
+  mk("백업 가져오기(합치기)",openImport);
+  mk("백업 내보내기",()=>exportBackup(""));
+}
+
 /* ---------- boot ---------- */
 render();
 (async()=>{
@@ -1491,6 +1576,7 @@ render();
   file.onchange=function(){var f=file.files[0];if(!f)return;var r=new FileReader();r.onload=function(){try{var s=JSON.parse(r.result);if(!s||typeof s!=="object"||!s.items)throw 0;
       var cur=L.get(),has=cur&&cur.items&&Object.keys(cur.items).length;if(confirm("현재 보드 내용을 이 백업 파일로 바꿉니다."+(has?"\n\n바꾸기 전에 지금 내용을 백업 파일(AXPI_보드백업_가져오기전_날짜.json)로 먼저 내려받습니다.":"")+"\n\n계속할까요?")){if(has){L.save({filename:"AXPI_보드백업_가져오기전_"+stamp()+".json",data:JSON.stringify(cur,null,1)});setTimeout(function(){L.replace(s)},1200)}else L.replace(s)}}catch(e){alert("AX/PI 보드 백업 파일이 아닙니다.")}file.value=""};r.readAsText(f)};
   
+  var ob=btn("온라인 보드 열기",function(){window.open("https://claude.ai/artifact/QGxRP7L9QxDoVzj2UZLySN","_blank","noopener")});ob.className="btn primary";
   btn("백업 가져오기",function(){file.click()});
   btn("백업 내보내기",function(){L.save({filename:"AXPI_보드백업_"+stamp()+".json",data:JSON.stringify(L.get(),null,1)})});
   var ft=document.getElementById("foot");
@@ -1498,7 +1584,7 @@ render();
     :"데이터는 이 기기에만 저장됩니다. 처음에는 ‘백업 가져오기’로 데이터를 넣고, 회의 후에는 ‘백업 내보내기’로 파일을 남겨 주세요.";
 })();
 </script>
-<script>window.__APPVER__='2026.10.22-1328';</script>
+<script>window.__APPVER__='2026.10.22-1341';</script>
 <script>(function(){
   var V=window.__APPVER__||"";
   function stamp(){var d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")}
