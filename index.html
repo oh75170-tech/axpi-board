@@ -119,6 +119,13 @@ select.st.s-hold{color:var(--muted)}
 .mv{display:flex;gap:4px;margin-top:2px;flex-wrap:wrap}
 .mv button{border:1px dashed var(--line);background:transparent;border-radius:999px;padding:1px 9px;font-size:11.5px;color:var(--ink2)}
 .mv button:hover{border-color:var(--ink);color:var(--ink)}
+.mv.sw{align-items:center}
+.mv.sw span{font-size:11px;color:var(--muted);margin-right:2px}
+.mv.sw span::after{content:" →"}
+.mv.sw button{border:1px solid var(--ink2);color:var(--ink);background:var(--surface)}
+.mv.sw button:hover{background:var(--ink);color:var(--surface)}
+.sendw{margin-left:auto;border:1px solid var(--ink2);background:var(--surface);border-radius:999px;padding:2px 10px;font-size:11.5px;color:var(--ink)}
+.sendw:hover{background:var(--ink);color:var(--surface)}
 .hidebtn{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:2px 10px;font-size:11.5px;color:var(--ink2);margin-left:8px}
 .hidebtn[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--surface)}
 .hidden-note{padding:8px 26px;font-size:12px;color:var(--muted);border-top:1px dashed var(--line)}
@@ -449,6 +456,7 @@ function chipRow(it){
   const c=[];
   c.push(`<span class="chip type-${esc(it.type)}">${esc(TYPES[it.type]||it.type)}</span>`);
   if(mode==="weekly"&&isCouncil(it))c.push(`<span class="chip mt-council">협의체</span>`);
+  else if(mode==="weekly"&&it.fromCouncil)c.push(`<span class="chip mt-council">협의체에서</span>`);
   if(it.category)c.push(`<span class="chip">${esc(it.category)}</span>`);
   c.push(`<span class="who">담당 ${esc(it.owner||"미지정")}</span>`);
   if(it.contact)c.push(`<span>· 컨택 ${esc(it.contact)}</span>`);
@@ -458,8 +466,10 @@ function chipRow(it){
   return c.join("");
 }
 const MV={task:"→ 업무로 이관",fu:"→ F/up으로 이관",decision:"→ 결정사항으로 이관",metric:"→ 지표로 관리"};
+const SW={task:"업무 List",fu:"F/up·이슈",decision:"결정사항",metric:"지표",share:"공유사항"};
 function rowHTML(it,moves){
-  const mv=writable&&moves&&moves.length?`<div class="mv">${moves.filter(k=>k!==it.type).map(k=>`<button type="button" data-act="move" data-to="${k}">${MV[k]}</button>`).join("")}</div>`:"";
+  const mv=(writable&&moves&&moves.length?`<div class="mv">${moves.filter(k=>k!==it.type).map(k=>`<button type="button" data-act="move" data-to="${k}">${MV[k]}</button>`).join("")}</div>`:"")+
+    (writable&&mode==="council"&&isCouncil(it)&&(isOpen(it)||it.type==="decision")?`<div class="mv sw"><span>주간회의로 보내기</span>${Object.entries(SW).map(([k,v])=>`<button type="button" data-act="toWeekly" data-to="${k}">${v}</button>`).join("")}</div>`:"");
   const opts=Object.entries(STATUS).map(([k,v])=>`<option value="${k}" ${it.status===k?"selected":""}>${v}</option>`).join("");
   return `<div class="row st-${esc(it.status)}" data-id="${esc(it.id)}">
     <button class="chk" data-act="toggle" aria-label="완료 체크" ${writable?"":"disabled"}>✓</button>
@@ -652,13 +662,13 @@ function renderCouncil(){
   const qa=kind=>writable?`<form class="qa" data-qa="${kind}"><input name="title" placeholder="${kind==="decision"?"결정사항 입력":kind==="fu"?"F/up·이슈 입력":"협의체 업무 입력"}" required aria-label="제목"><select name="category" aria-label="분류">${catOpts}</select>${ownerPick("")}<input name="due" type="date" aria-label="기한"><button class="btn primary sm" type="submit">추가</button></form>`:"";
   const rep=reports.find(r=>r.id===curWeek+"-c");
   document.getElementById("view").innerHTML=`<div style="display:flex;flex-direction:column;gap:12px">
-   ${sec("01","협의체 공유사항","상정 안건·전달받은 내용",`<textarea class="note" data-wk="ctext" data-key="headlines" placeholder="예) To-Be 체크리스트 배포, Mega과제 일정 공유…" ${ro}>${esc(c.headlines||"")}</textarea>`)}
+   ${sec("01","협의체 공유사항","상정 안건·전달받은 내용",`<textarea class="note" data-wk="ctext" data-key="headlines" placeholder="예) To-Be 체크리스트 배포, Mega과제 일정 공유…" ${ro}>${esc(c.headlines||"")}</textarea>`,"",writable?`<button type="button" class="sendw" data-act="sendText" data-key="headlines">주간회의 공유사항으로 →</button>`:"")}
    ${sec("02","협의체 F/up · 이슈",`체크하면 완료로 기록 · ${fu.filter(isOpen).length}건 남음`,rows(fu,"열려 있는 협의체 F/up·이슈가 없습니다.","c02",["task","decision"])+qa("fu"),"",hideBtn("c02"))}
    ${sec("03","협의체 업무","",rows(tasks,"진행 중인 협의체 업무가 없습니다.","c03",["fu","decision"])+qa("task"),"",hideBtn("c03"))}
    ${sec("04","결정사항 · 전파사항","",rows(dec,"이번 협의체 결정사항을 기록하세요.","c04")+qa("decision")+
       (recentDec.length&&!hideDone.c04?`<div class="grp-h"><span>최근 협의체 결정사항</span><span class="mono">${recentDec.length}</span></div>`+recentDec.map(rowHTML).join(""):"")+
       `<textarea class="note" data-wk="ctext" data-key="closing" placeholder="그룹 내 전파사항, 주간회의에서 다룰 것" ${ro}>${esc(c.closing||"")}</textarea>
-      <div class="rate" style="justify-content:flex-end"><span class="status-line">${rep?"마지막 저장 "+esc(rep.savedAt):"아직 저장하지 않았습니다"}</span><button class="btn save" data-act="saveReport">협의체 회의록 저장 (Word)</button></div>`,"",hideBtn("c04"))}
+      <div class="rate" style="justify-content:flex-end"><span class="status-line">${rep?"마지막 저장 "+esc(rep.savedAt):"아직 저장하지 않았습니다"}</span><button class="btn save" data-act="saveReport">협의체 회의록 저장 (Word)</button></div>`,"",hideBtn("c04")+(writable?`<button type="button" class="sendw" style="margin-left:6px" data-act="sendText" data-key="closing">전파사항 → 주간 공유사항</button>`:""))}
   </div>`;
 }
 
@@ -730,6 +740,32 @@ function setStatus(id,st){
   const it={...items.get(id)};it.status=st;
   if(st==="done"){it.doneAt=it.doneAt||iso(today)}else delete it.doneAt;
   it.updatedAt=iso(today);saveItem(it);
+}
+function nextWeeklyWeek(){let w=mondayOf(today);if(meetInfo(w).date<iso(today))w=addDays(w,7);return w}
+function sendToWeekly(id,to){
+  const it=items.get(id);if(!it)return;
+  const tw=nextWeeklyWeek(), mdate=md(meetInfo(tw).date), lbl=SW[to], stamp=`[${md(iso(today))}] `;
+  if(to==="metric"){openMetricEditor(null,it);return}
+  if(to==="share"){
+    const line=`- ${it.title}${it.owner?` (${it.owner})`:""} · ${it.source||"협의체"}`;
+    const cur=(weeks[tw]||{}).headlines||"";
+    if(cur.includes(line))return toast("이미 "+mdate+" 주간회의 공유사항에 있습니다");
+    patchWeek({headlines:cur+(cur&&!cur.endsWith("\n")?"\n":"")+line},tw);
+    saveItem({...it,notes:(it.notes?it.notes+"\n":"")+stamp+`주간회의(${mdate}) 공유사항으로 전달`,updatedAt:iso(today)});
+    render();return toast(`${mdate} 주간회의 공유사항에 넣었습니다`);
+  }
+  const next={...it,type:to,meeting:"weekly",week:tw,fromCouncil:it.source||"협의체",updatedAt:iso(today)};
+  next.notes=(it.notes?it.notes+"\n":"")+stamp+`협의체 → 주간회의 ${lbl} 이관`;
+  if(to==="decision"){next.status="done";next.doneAt=next.doneAt||iso(today)}
+  else if(it.type==="decision"&&it.status==="done"){next.status="doing";delete next.doneAt}
+  saveItem(next);toast(`'${it.title.slice(0,18)}' → ${mdate} 주간회의 ${lbl}(으)로 보냈습니다`);
+}
+function sendTextToWeekly(key){
+  const txt=((cw()[key])||"").trim();if(!txt)return toast("보낼 내용이 없습니다");
+  const tw=nextWeeklyWeek(), mdate=md(meetInfo(tw).date), cur=(weeks[tw]||{}).headlines||"";
+  const block=`[${md(councilInfo().date)} 협의체 ${key==="closing"?"전파사항":"공유사항"}]\n${txt}`;
+  if(cur.includes(block))return toast("이미 "+mdate+" 주간회의 공유사항에 있습니다");
+  patchWeek({headlines:cur+(cur?"\n\n":"")+block},tw);render();toast(`${mdate} 주간회의 공유사항에 넣었습니다`);
 }
 function moveItem(id,to){
   const it=items.get(id);if(!it||it.type===to)return;
@@ -1279,8 +1315,10 @@ function onAct(e){
   if(row){const id=row.dataset.id,it=items.get(id);
     if(a==="toggle"&&writable)setStatus(id,it.status==="done"?"doing":"done");
     if(a==="edit")openEditor(it);
-    if(a==="move"&&writable)moveItem(id,act.dataset.to);return}
+    if(a==="move"&&writable)moveItem(id,act.dataset.to);
+    if(a==="toWeekly"&&writable)sendToWeekly(id,act.dataset.to);return}
   if(a==="saveReport")saveReport();
+  if(a==="sendText"&&writable)sendTextToWeekly(act.dataset.key);
   if(a==="mNew")openMetricEditor(null);
   if(a==="mEdit"){const m=(config.metrics||[]).find(x=>x.key===act.dataset.key);if(m)openMetricEditor(m)}
   if(a==="mHide")toggleMetricHidden(act.dataset.key);
@@ -1460,7 +1498,7 @@ render();
     :"데이터는 이 기기에만 저장됩니다. 처음에는 ‘백업 가져오기’로 데이터를 넣고, 회의 후에는 ‘백업 내보내기’로 파일을 남겨 주세요.";
 })();
 </script>
-<script>window.__APPVER__='2026.10.21-1420';</script>
+<script>window.__APPVER__='2026.10.22-1328';</script>
 <script>(function(){
   var V=window.__APPVER__||"";
   function stamp(){var d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")}
