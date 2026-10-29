@@ -119,6 +119,8 @@ select.st.s-hold{color:var(--muted)}
 .mv{display:flex;gap:4px;margin-top:2px;flex-wrap:wrap}
 .mv button{border:1px dashed var(--line);background:transparent;border-radius:999px;padding:1px 9px;font-size:11.5px;color:var(--ink2)}
 .mv button:hover{border-color:var(--ink);color:var(--ink)}
+.mv .route{border:1px dashed var(--muted);background:var(--surface);border-radius:999px;padding:1px 8px;font-size:11.5px;color:var(--ink2);max-width:100%}
+.mv .route:hover,.mv .route:focus{border-style:solid;border-color:var(--ink);color:var(--ink)}
 .mv.sw{align-items:center}
 .mv.sw span{font-size:11px;color:var(--muted);margin-right:2px}
 .mv.sw span::after{content:" →"}
@@ -126,6 +128,18 @@ select.st.s-hold{color:var(--muted)}
 .mv.sw button:hover{background:var(--ink);color:var(--surface)}
 .sendw{margin-left:auto;border:1px solid var(--ink2);background:var(--surface);border-radius:999px;padding:2px 10px;font-size:11.5px;color:var(--ink)}
 .sendw:hover{background:var(--ink);color:var(--surface)}
+.sendgrp{margin-left:auto;display:inline-flex;gap:6px;flex-wrap:wrap}
+.sendgrp .sendw{margin-left:0}
+.sendw.lite{border-style:dashed;color:var(--ink2)}
+.sp-all{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--line)}
+.sp-all select,.sp-row select,.sp-row input{border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:var(--surface);min-width:0;font-size:13px}
+.sp-list{display:flex;flex-direction:column;overflow:auto}
+.sp-row{display:grid;grid-template-columns:22px minmax(0,1fr) 150px 92px 128px auto;gap:6px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)}
+.sp-row.sub{padding-left:22px}
+.sp-row:not(.sub) input[name^=t]{font-weight:600}
+.sp-row.done input[name^=t]{color:var(--muted)}
+.sp-row input[type=checkbox]{width:16px;height:16px}
+@media (max-width:700px){.sp-row{grid-template-columns:22px 1fr 1fr}.sp-row input[name^=t]{grid-column:2/-1}.sp-row.sub{padding-left:10px}}
 .hidebtn{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:2px 10px;font-size:11.5px;color:var(--ink2);margin-left:8px}
 .hidebtn[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--surface)}
 .hidden-note{padding:8px 26px;font-size:12px;color:var(--muted);border-top:1px dashed var(--line)}
@@ -143,7 +157,7 @@ select.st.s-hold{color:var(--muted)}
 .ownpick summary{list-style:none;border:1px solid var(--line);border-radius:8px;padding:5px 9px;background:var(--surface);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink2)}
 .ownpick summary::-webkit-details-marker{display:none}
 .ownpick summary::after{content:" ▾";color:var(--muted)}
-.ownpick[open] .ownlist{position:absolute;z-index:15;top:calc(100% + 4px);left:0;min-width:160px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);display:flex;flex-direction:column;gap:4px}
+.ownpick[open] .ownlist{overflow:auto;position:absolute;z-index:45;top:calc(100% + 4px);left:0;min-width:160px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);display:flex;flex-direction:column;gap:4px}
 .ownlist label,.ownbox label{display:flex;gap:8px;align-items:center;font-size:13px;padding:3px 4px;cursor:pointer}
 .ownbox input{width:auto!important;flex:none}
 .f .rlog input{width:96px}
@@ -458,6 +472,7 @@ function chipRow(it){
   c.push(`<span class="chip type-${esc(it.type)}">${esc(TYPES[it.type]||it.type)}</span>`);
   if(mode==="weekly"&&isCouncil(it))c.push(`<span class="chip mt-council">협의체</span>`);
   else if(mode==="weekly"&&it.fromCouncil)c.push(`<span class="chip mt-council">협의체에서</span>`);
+  else if(mode==="council"&&it.fromWeekly)c.push(`<span class="chip mt-council">주간회의에서</span>`);
   if(it.category)c.push(`<span class="chip">${esc(it.category)}</span>`);
   c.push(`<span class="who">담당 ${esc(it.owner||"미지정")}</span>`);
   if(it.contact)c.push(`<span>· 컨택 ${esc(it.contact)}</span>`);
@@ -468,9 +483,18 @@ function chipRow(it){
 }
 const MV={task:"→ 업무로 이관",fu:"→ F/up으로 이관",decision:"→ 결정사항으로 이관",metric:"→ 지표로 관리"};
 const SW={task:"업무 List",fu:"F/up·이슈",decision:"결정사항",metric:"지표",share:"공유사항"};
+const SWC={task:"협의체 업무",fu:"협의체 F/up·이슈",decision:"협의체 결정사항",share:"협의체 공유사항"};
+function routeOpts(it){
+  const C=isCouncil(it), here=C?"협의체":"주간회의", other=C?"주간회의":"협의체";
+  const cur=it.type==="issue"?"fu":it.type;
+  const inK=["task","fu","decision"].filter(k=>k!==cur).concat(C?[]:["metric"]);
+  const lab={task:"업무로",fu:"F/up·이슈로",decision:"결정사항으로",metric:"지표로 관리"};
+  const outK=C?["task","fu","decision","metric","share"]:["task","fu","decision","share"];
+  const outL=C?SW:SWC;
+  return `<option value="">이관·보내기 ▾</option><optgroup label="${here} 안에서 옮기기">${inK.map(k=>`<option value="move:${k}">→ ${lab[k]}</option>`).join("")}</optgroup><optgroup label="${other}로 보내기">${outK.map(k=>`<option value="send:${k}">→ ${outL[k]}</option>`).join("")}</optgroup>`;
+}
 function rowHTML(it,moves){
-  const mv=(writable&&moves&&moves.length?`<div class="mv">${moves.filter(k=>k!==it.type).map(k=>`<button type="button" data-act="move" data-to="${k}">${MV[k]}</button>`).join("")}</div>`:"")+
-    (writable&&mode==="council"&&isCouncil(it)&&(isOpen(it)||it.type==="decision")?`<div class="mv sw"><span>주간회의로 보내기</span>${Object.entries(SW).map(([k,v])=>`<button type="button" data-act="toWeekly" data-to="${k}">${v}</button>`).join("")}</div>`:"");
+  const mv=writable&&(isOpen(it)||it.type==="decision")?`<div class="mv"><select class="route" data-act="route" aria-label="이관·보내기">${routeOpts(it)}</select></div>`:"";
   const opts=Object.entries(STATUS).map(([k,v])=>`<option value="${k}" ${it.status===k?"selected":""}>${v}</option>`).join("");
   return `<div class="row st-${esc(it.status)}" data-id="${esc(it.id)}">
     <button class="chk" data-act="toggle" aria-label="완료 체크" ${writable?"":"disabled"}>✓</button>
@@ -641,7 +665,7 @@ function renderWeekly(){
    ${sec("01","그룹원 한 줄 공유","지난 한 주 잘된 일·공유할 일 한 줄",config.members.map(m=>`<div class="ol"><b>${esc(m)}</b><input data-wk="one" data-key="${esc(m)}" value="${esc(ol[m]||"")}" placeholder="한 줄 공유" aria-label="${esc(m)} 한 줄 공유" ${ro}></div>`).join(""))}
    ${sec("02","주간 지표","목표 미달은 굵은 밑줄 → 이슈로 올려 논의",scorecardHTML())}
    ${sec("03","분기 핵심과제",quarterOf(curWeek)+" · 지연은 이슈로",(rk.length?rk.map(rockHTML).join(""):`<div class="empty">이번 분기 핵심과제가 없습니다. 아래에서 추가하세요.</div>`)+qa("rock")+([...rocks.values()].some(r=>r.quarter===quarterOf(curWeek)&&r.hidden)?`<div class="mfoot"><button type="button" class="btn sm" data-act="rShowHidden">${showHiddenRocks?"숨긴 과제 감추기":`숨긴 과제 ${[...rocks.values()].filter(r=>r.quarter===quarterOf(curWeek)&&r.hidden).length}개 보기`}</button></div>`:""))}
-   ${sec("04","주간 공유사항","일정·보고·공지 등 헤드라인",`<textarea class="note" data-wk="text" data-key="headlines" placeholder="예) 주요 일정·보고·공지" ${ro}>${esc(w.headlines||"")}</textarea>`)}
+   ${sec("04","주간 공유사항","일정·보고·공지 등 헤드라인",`<textarea class="note" data-wk="text" data-key="headlines" placeholder="예) 주요 일정·보고·공지" ${ro}>${esc(w.headlines||"")}</textarea>`,"",writable?`<span class="sendgrp"><button type="button" class="sendw" data-act="split" data-src="wh">줄 나눠 보내기</button><button type="button" class="sendw lite" data-act="sendTextC">통째로 협의체로 →</button></span>`:"")}
    ${sec("05","AX/PI 그룹 업무 List",`지난 업무·이번 주 신규·다음 주 할 일 · ${groupList.filter(isOpen).length}건 진행`,rows(groupList,"등록된 업무가 없습니다. 아래에서 바로 추가하세요.","w05",["fu","decision","metric"])+qa("task"),"",hideBtn("w05"))}
    ${sec("06","F/up · 이슈","컨택 대상과 함께 해결방안 논의",rows(fuIssue,"열려 있는 F/up·이슈가 없습니다.","w06",["task","decision","metric"])+qa("fu"),"",hideBtn("w06"))}
    ${sec("07","결정사항 · 마무리","",rows(decisions,"이번 주 결정사항을 기록하세요.","w07")+qa("decision")+
@@ -663,13 +687,13 @@ function renderCouncil(){
   const qa=kind=>writable?`<form class="qa" data-qa="${kind}"><input name="title" placeholder="${kind==="decision"?"결정사항 입력":kind==="fu"?"F/up·이슈 입력":"협의체 업무 입력"}" required aria-label="제목"><select name="category" aria-label="분류">${catOpts}</select>${ownerPick("")}<input name="due" type="date" aria-label="기한"><button class="btn primary sm" type="submit">추가</button></form>`:"";
   const rep=reports.find(r=>r.id===curWeek+"-c");
   document.getElementById("view").innerHTML=`<div style="display:flex;flex-direction:column;gap:12px">
-   ${sec("01","협의체 공유사항","상정 안건·전달받은 내용",`<textarea class="note" data-wk="ctext" data-key="headlines" placeholder="예) To-Be 체크리스트 배포, Mega과제 일정 공유…" ${ro}>${esc(c.headlines||"")}</textarea>`,"",writable?`<button type="button" class="sendw" data-act="sendText" data-key="headlines">주간회의 공유사항으로 →</button>`:"")}
+   ${sec("01","협의체 공유사항","상정 안건·전달받은 내용",`<textarea class="note" data-wk="ctext" data-key="headlines" placeholder="예) To-Be 체크리스트 배포, Mega과제 일정 공유…" ${ro}>${esc(c.headlines||"")}</textarea>`,"",writable?`<span class="sendgrp"><button type="button" class="sendw" data-act="split" data-src="ch">줄 나눠 보내기</button><button type="button" class="sendw lite" data-act="sendText" data-key="headlines">통째로 주간회의로 →</button></span>`:"")}
    ${sec("02","협의체 F/up · 이슈",`체크하면 완료로 기록 · ${fu.filter(isOpen).length}건 남음`,rows(fu,"열려 있는 협의체 F/up·이슈가 없습니다.","c02",["task","decision"])+qa("fu"),"",hideBtn("c02"))}
    ${sec("03","협의체 업무","",rows(tasks,"진행 중인 협의체 업무가 없습니다.","c03",["fu","decision"])+qa("task"),"",hideBtn("c03"))}
    ${sec("04","결정사항 · 전파사항","",rows(dec,"이번 협의체 결정사항을 기록하세요.","c04")+qa("decision")+
       (recentDec.length&&!hideDone.c04?`<div class="grp-h"><span>최근 협의체 결정사항</span><span class="mono">${recentDec.length}</span></div>`+recentDec.map(rowHTML).join(""):"")+
       `<textarea class="note" data-wk="ctext" data-key="closing" placeholder="그룹 내 전파사항, 주간회의에서 다룰 것" ${ro}>${esc(c.closing||"")}</textarea>
-      <div class="rate" style="justify-content:flex-end"><span class="status-line">${rep?"마지막 저장 "+esc(rep.savedAt):"아직 저장하지 않았습니다"}</span><button class="btn save" data-act="saveReport">협의체 회의록 저장 (Word)</button></div>`,"",hideBtn("c04")+(writable?`<button type="button" class="sendw" style="margin-left:6px" data-act="sendText" data-key="closing">전파사항 → 주간 공유사항</button>`:""))}
+      <div class="rate" style="justify-content:flex-end"><span class="status-line">${rep?"마지막 저장 "+esc(rep.savedAt):"아직 저장하지 않았습니다"}</span><button class="btn save" data-act="saveReport">협의체 회의록 저장 (Word)</button></div>`,"",hideBtn("c04")+(writable?`<span class="sendgrp" style="margin-left:6px"><button type="button" class="sendw" data-act="split" data-src="cc">전파사항 나눠 보내기</button><button type="button" class="sendw lite" data-act="sendText" data-key="closing">통째로 주간회의로 →</button></span>`:""))}
   </div>`;
 }
 
@@ -743,24 +767,29 @@ function setStatus(id,st){
   it.updatedAt=iso(today);saveItem(it);
 }
 function nextWeeklyWeek(){let w=mondayOf(today);if(meetInfo(w).date<iso(today))w=addDays(w,7);return w}
-function sendToWeekly(id,to){
+function nextCouncilWeek(){let w=mondayOf(today);if(councilInfo(w).date<iso(today))w=addDays(w,7);return w}
+const MTN={weekly:"주간회의",council:"협의체"};
+function targetOf(tm){const tw=tm==="council"?nextCouncilWeek():nextWeeklyWeek();return {tw,mdate:md((tm==="council"?councilInfo(tw):meetInfo(tw)).date)}}
+function shareHL(tm,tw){return tm==="council"?(((weeks[tw]||{}).council||{}).headlines||""):((weeks[tw]||{}).headlines||"")}
+function appendShare(tm,tw,text){const cur=shareHL(tm,tw);if(cur.includes(text))return false;const nv=cur+(cur?(cur.endsWith("\n")?"\n":"\n\n"):"")+text;if(tm==="council")patchWeek({council:{headlines:nv}},tw);else patchWeek({headlines:nv},tw);return true}
+function sendTo(id,tm,to){
   const it=items.get(id);if(!it)return;
-  const tw=nextWeeklyWeek(), mdate=md(meetInfo(tw).date), lbl=SW[to], stamp=`[${md(iso(today))}] `;
+  const fm=isCouncil(it)?"council":"weekly";if(tm===fm)return moveItem(id,to);
+  const {tw,mdate}=targetOf(tm), lbl=(tm==="council"?SWC:SW)[to], stamp=`[${md(iso(today))}] `;
   if(to==="metric"){openMetricEditor(null,it);return}
   if(to==="share"){
-    const line=`- ${it.title}${it.owner?` (${it.owner})`:""} · ${it.source||"협의체"}`;
-    const cur=(weeks[tw]||{}).headlines||"";
-    if(cur.includes(line))return toast("이미 "+mdate+" 주간회의 공유사항에 있습니다");
-    patchWeek({headlines:cur+(cur&&!cur.endsWith("\n")?"\n":"")+line},tw);
-    saveItem({...it,notes:(it.notes?it.notes+"\n":"")+stamp+`주간회의(${mdate}) 공유사항으로 전달`,updatedAt:iso(today)});
-    render();return toast(`${mdate} 주간회의 공유사항에 넣었습니다`);
+    if(!appendShare(tm,tw,`- ${it.title}${it.owner?` (${it.owner})`:""} · ${it.source||MTN[fm]}`))return toast(`이미 ${mdate} ${MTN[tm]} 공유사항에 있습니다`);
+    saveItem({...it,notes:(it.notes?it.notes+"\n":"")+stamp+`${MTN[tm]}(${mdate}) 공유사항으로 전달`,updatedAt:iso(today)});
+    render();return toast(`${mdate} ${MTN[tm]} 공유사항에 넣었습니다`);
   }
-  const next={...it,type:to,meeting:"weekly",week:tw,fromCouncil:it.source||"협의체",updatedAt:iso(today)};
-  next.notes=(it.notes?it.notes+"\n":"")+stamp+`협의체 → 주간회의 ${lbl} 이관`;
+  const next={...it,type:to,meeting:tm,week:tw,updatedAt:iso(today)};
+  if(tm==="weekly"){next.fromCouncil=it.source||"협의체";delete next.fromWeekly}else{next.fromWeekly=it.source||"주간회의";delete next.fromCouncil}
+  next.notes=(it.notes?it.notes+"\n":"")+stamp+`${MTN[fm]} → ${MTN[tm]} ${lbl} 이관`;
   if(to==="decision"){next.status="done";next.doneAt=next.doneAt||iso(today)}
   else if(it.type==="decision"&&it.status==="done"){next.status="doing";delete next.doneAt}
-  saveItem(next);toast(`'${it.title.slice(0,18)}' → ${mdate} 주간회의 ${lbl}(으)로 보냈습니다`);
+  saveItem(next);toast(`'${it.title.slice(0,18)}' → ${mdate} ${lbl}(으)로 보냈습니다`);
 }
+function sendToWeekly(id,to){return sendTo(id,"weekly",to)}
 function sendTextToWeekly(key){
   const txt=((cw()[key])||"").trim();if(!txt)return toast("보낼 내용이 없습니다");
   const tw=nextWeeklyWeek(), mdate=md(meetInfo(tw).date), cur=(weeks[tw]||{}).headlines||"";
@@ -768,6 +797,50 @@ function sendTextToWeekly(key){
   if(cur.includes(block))return toast("이미 "+mdate+" 주간회의 공유사항에 있습니다");
   patchWeek({headlines:cur+(cur?"\n\n":"")+block},tw);render();toast(`${mdate} 주간회의 공유사항에 넣었습니다`);
 }
+/* 공유사항·전파사항 글을 줄 단위로 나눠 보내기 */
+const SPLIT_SRC={wh:{m:"weekly",key:"headlines",label:"주간 공유사항"},ch:{m:"council",key:"headlines",label:"협의체 공유사항"},cc:{m:"council",key:"closing",label:"협의체 전파사항"}};
+function splitLines(text){const out=[];let parent=-1;
+  String(text||"").split("\n").forEach((raw,i)=>{if(!raw.trim())return;const sub=/^[\s\u3000]+/.test(raw)||/^[-•·*▪◦]/.test(raw.trim())&&parent>=0&&!/^\d+[.)]/.test(raw.trim());
+    const done=/^[\s]*✔/.test(raw);const title=raw.trim().replace(/^✔\s*/,"").replace(/^(\d+[.)]|[-•·*▪◦]|\(\d+\))\s*/,"").trim();
+    const row={i,raw,title,sub,done,parent:sub?parent:-1};if(!sub)parent=out.length;out.push(row)});return out}
+function openSplit(srcKey){
+  if(!writable)return toast("보기 전용입니다");
+  const src=SPLIT_SRC[srcKey];const ta=document.querySelector(src.m==="council"?`textarea[data-wk=ctext][data-key=${src.key}]`:`textarea[data-wk=text][data-key=${src.key}]`);
+  const text=ta?ta.value:(src.m==="council"?(cw()[src.key]||""):(wk()[src.key]||""));
+  if(ta&&ta.value!==(src.m==="council"?(cw()[src.key]||""):(wk()[src.key]||""))){if(src.m==="council")patchWeek({council:{[src.key]:ta.value}});else patchWeek({[src.key]:ta.value})}
+  const rows=splitLines(text);if(!rows.length)return toast("나눠 보낼 내용이 없습니다");
+  const here=src.m, other=here==="council"?"weekly":"council";
+  const dests=[["here:task",`${MTN[here]} 업무`],["here:fu",`${MTN[here]} F/up·이슈`],["here:decision",`${MTN[here]} 결정사항`],["other:task",`${MTN[other]} 업무`],["other:fu",`${MTN[other]} F/up·이슈`],["other:decision",`${MTN[other]} 결정사항`],["other:share",`${MTN[other]} 공유사항`]];
+  const def=here==="council"?"here:fu":"here:task";
+  const dsel=(nm,v)=>`<select name="${nm}" aria-label="보낼 곳">${dests.map(([k,l])=>`<option value="${k}" ${k===v?"selected":""}>${l}</option>`).join("")}</select>`;
+  const mem=`<option value="">담당</option>`+config.members.map(m=>`<option>${esc(m)}</option>`).join("");
+  document.getElementById("layer").innerHTML=`<div class="scrim" data-close><form class="panel wide" id="spForm" role="dialog" aria-label="나눠 보내기">
+    <h3>${esc(src.label)} 나눠 보내기</h3>
+    <p class="status-line">보낼 줄을 체크하고, 줄마다 보낼 곳을 고르세요. 제목은 고쳐도 됩니다. 제목 줄(1. 2. …)을 보내면 그 아래 줄이 메모로 함께 들어갑니다.</p>
+    <div class="sp-all"><span class="status-line">체크한 줄 모두</span>${dsel("all",def)}<button type="button" class="btn sm" id="spApply">일괄 적용</button><label class="confirm" style="margin-left:auto"><input type="checkbox" name="mark" checked> 보낸 줄 앞에 ✔ 표시</label></div>
+    <div class="sp-list">${rows.map((r,n)=>`<div class="sp-row ${r.sub?"sub":""} ${r.done?"done":""}"><input type="checkbox" name="pick" value="${n}" aria-label="${esc(r.title)} 선택"><input name="t${n}" value="${esc(r.title)}" aria-label="제목">${dsel("d"+n,def)}<select name="o${n}" aria-label="담당">${mem}</select><input name="due${n}" type="date" aria-label="기한">${r.done?'<span class="status-line">보냄</span>':""}</div>`).join("")}</div>
+    <div class="panel-foot"><button type="button" class="btn" data-close>닫기</button><button class="btn primary" id="spGo">선택한 줄 보내기</button></div></form></div>`;
+  const f=document.getElementById("spForm");
+  f.querySelector("#spApply").onclick=()=>{const v=f.querySelector("[name=all]").value;f.querySelectorAll("[name=pick]:checked").forEach(c=>{f.querySelector(`[name=d${c.value}]`).value=v})};
+  f.querySelectorAll(".sp-row input[name^=t],.sp-row select").forEach(el=>el.addEventListener("change",()=>{const c=el.closest(".sp-row").querySelector("[name=pick]");c.checked=true}));
+  f.addEventListener("submit",e=>{e.preventDefault();const fd=new FormData(f);const picks=fd.getAll("pick").map(Number);if(!picks.length)return toast("보낼 줄을 체크하세요");
+    const picked=new Set(picks);const srcDate=md((here==="council"?councilInfo():meetInfo()).date),ctx=`[${srcDate} ${src.label}]`;
+    const shares={};let nItems=0;
+    picks.forEach(n=>{const r=rows[n];const title=String(fd.get("t"+n)||r.title).trim();if(!title)return;const [w,k]=String(fd.get("d"+n)).split(":");const tm=w==="here"?here:other;
+      const kids=rows.filter((x,j)=>x.parent===n&&!picked.has(j)).map(x=>x.raw.trim());const par=r.sub&&r.parent>=0?rows[r.parent].raw.trim():"";
+      if(k==="share"){(shares[tm]=shares[tm]||[]).push("- "+title+(kids.length?"\n"+kids.map(x=>"  "+x).join("\n"):""));return}
+      const tw=tm===here?curWeek:targetOf(tm).tw;
+      const notes=[ctx+(par?" "+par:""),...kids].join("\n");
+      const it={id:newId(),title:title.slice(0,120),type:k,category:"",owner:String(fd.get("o"+n)||""),contact:"",status:k==="decision"?"done":"todo",due:String(fd.get("due"+n)||""),notes,week:tw,meeting:tm,source:srcDate+" "+(here==="council"?"협의체":"회의"),extra:{},updatedAt:iso(today)};
+      if(k==="decision")it.doneAt=iso(today);
+      if(tm!==here){if(tm==="weekly")it.fromCouncil=it.source;else it.fromWeekly=it.source}
+      saveItem(it);nItems++});
+    Object.keys(shares).forEach(tm=>appendShare(tm,targetOf(tm).tw,`${ctx}\n`+shares[tm].join("\n")));
+    if(fd.get("mark")){const lines=String(text).split("\n");picks.forEach(n=>{const r=rows[n];if(!r.done)lines[r.i]=lines[r.i].replace(/^(\s*)/,"$1✔ ")});const nv=lines.join("\n");if(src.m==="council")patchWeek({council:{[src.key]:nv}});else patchWeek({[src.key]:nv})}
+    closeLayer();render();toast(`보냈습니다 · 항목 ${nItems}건${Object.keys(shares).length?", 공유사항 "+Object.values(shares).flat().length+"줄":""}`)});
+}
+function sendTextToCouncil(){const txt=((wk().headlines)||"").trim();if(!txt)return toast("보낼 내용이 없습니다");const {tw,mdate}=targetOf("council");
+  if(!appendShare("council",tw,`[${md(meetInfo().date)} 주간 공유사항]\n${txt}`))return toast(`이미 ${mdate} 협의체 공유사항에 있습니다`);render();toast(`${mdate} 협의체 공유사항에 넣었습니다`)}
 function moveItem(id,to){
   const it=items.get(id);if(!it||it.type===to)return;
   if(to==="metric")return openMetricEditor(null,it);
@@ -1321,6 +1394,8 @@ function onAct(e){
     if(a==="toWeekly"&&writable)sendToWeekly(id,act.dataset.to);return}
   if(a==="saveReport")saveReport();
   if(a==="sendText"&&writable)sendTextToWeekly(act.dataset.key);
+  if(a==="sendTextC"&&writable)sendTextToCouncil();
+  if(a==="split")openSplit(act.dataset.src);
   if(a==="mNew")openMetricEditor(null);
   if(a==="mEdit"){const m=(config.metrics||[]).find(x=>x.key===act.dataset.key);if(m)openMetricEditor(m)}
   if(a==="mHide")toggleMetricHidden(act.dataset.key);
@@ -1342,6 +1417,8 @@ document.getElementById("stats").addEventListener("click",e=>{const b=e.target.c
 function onChange(e){
   const t=e.target;
   if(t.name==="owner"&&t.closest(".ownpick")){const d=t.closest(".ownpick"),v=[...d.querySelectorAll("input:checked")].map(x=>x.value);d.querySelector("summary").textContent=v.length?v.join(", "):"담당자";return}
+  const rt=t.closest("select[data-act=route]");if(rt){const v=rt.value;rt.value="";if(!v||!writable)return;const id=rt.closest(".row").dataset.id,[k,to]=v.split(":"),it=items.get(id);if(!it)return;
+    if(k==="move")moveItem(id,to);else sendTo(id,isCouncil(it)?"weekly":"council",to);return}
   const s=t.closest("select[data-act=status]");if(s){setStatus(s.closest(".row").dataset.id,s.value);return}
   const rk=t.closest("[data-rock]");
   if(rk&&t.dataset.ract){const r={...rocks.get(rk.dataset.rock)};
@@ -1355,6 +1432,14 @@ function onChange(e){
 }
 V.addEventListener("change",onChange);document.getElementById("layer").addEventListener("change",e=>{if(e.target.closest("#statPop,#calPop"))onChange(e)});
 document.addEventListener("click",e=>{document.querySelectorAll(".ownpick[open]").forEach(d=>{if(!d.contains(e.target))d.open=false})});
+function placeOwnList(d){const l=d.querySelector(".ownlist"),sm=d.querySelector("summary");if(!l||!sm)return;const r=sm.getBoundingClientRect();
+  l.style.position="fixed";l.style.left=Math.max(8,Math.min(r.left,innerWidth-Math.max(180,r.width)-8))+"px";l.style.minWidth=Math.max(180,r.width)+"px";l.style.maxHeight="";
+  const h=Math.min(l.scrollHeight,innerHeight*0.5);const below=innerHeight-r.bottom-8,above=r.top-8;
+  if(below>=h||below>=above){l.style.top=(r.bottom+4)+"px";l.style.bottom="";l.style.maxHeight=Math.max(120,below-4)+"px"}
+  else{l.style.top="";l.style.bottom=(innerHeight-r.top+4)+"px";l.style.maxHeight=Math.max(120,above-4)+"px"}}
+document.addEventListener("toggle",e=>{const d=e.target;if(d.classList&&d.classList.contains("ownpick")&&d.open)placeOwnList(d)},true);
+window.addEventListener("scroll",e=>{document.querySelectorAll(".ownpick[open]").forEach(d=>{if(!d.contains(e.target))placeOwnList(d)})},true);
+window.addEventListener("resize",()=>document.querySelectorAll(".ownpick[open]").forEach(placeOwnList));
 let qT;V.addEventListener("input",e=>{if(e.target.id==="fq"){clearTimeout(qT);qT=setTimeout(()=>{filt.q=e.target.value;render();const f=document.getElementById("fq");f.focus();f.setSelectionRange(f.value.length,f.value.length)},250)}});
 V.addEventListener("focusout",e=>{
   const t=e.target;
@@ -1584,7 +1669,7 @@ render();
     :"데이터는 이 기기에만 저장됩니다. 처음에는 ‘백업 가져오기’로 데이터를 넣고, 회의 후에는 ‘백업 내보내기’로 파일을 남겨 주세요.";
 })();
 </script>
-<script>window.__APPVER__='2026.10.22-1341';</script>
+<script>window.__APPVER__='2026.10.29-1041';</script>
 <script>(function(){
   var V=window.__APPVER__||"";
   function stamp(){var d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")}
