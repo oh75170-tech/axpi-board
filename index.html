@@ -41,6 +41,15 @@ button{cursor:pointer}
 .tb-cell{display:flex;flex-direction:column;min-width:max-content}
 .tb-cell small{font-weight:500;color:var(--muted);font-size:11px;letter-spacing:.06em}
 .tb-cell b{font-weight:500;font-size:14px;color:var(--ink);font-variant-numeric:tabular-nums}
+.savestat{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.savestat::before{content:"";width:8px;height:8px;border-radius:50%;background:#9a9a95;flex:none}
+.savestat.ok::before{background:#1d1d1f}
+.savestat.busy::before{background:transparent;border:2px solid #1d1d1f;width:6px;height:6px;animation:sspin 1s linear infinite}
+.savestat.err{color:#b3261e}.savestat.err::before{background:#b3261e}
+@keyframes sspin{50%{opacity:.2}}
+.savebar{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;background:#b3261e;color:#fff;font-size:13.5px;padding:10px 16px;border-radius:10px;margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.savebar b{font-weight:600}
+.savebar button{margin-left:auto;border:1px solid #fff;background:transparent;color:#fff;border-radius:999px;padding:3px 12px;font-size:12.5px}
 .tb-edit{white-space:nowrap;border:0;border-bottom:1px dashed var(--muted);background:none;padding:0;font-weight:500;font-size:14px;color:var(--ink);text-align:left;width:max-content;max-width:100%}
 .tb-edit:hover{border-bottom-color:var(--ink)}
 .mode{display:inline-flex;margin-top:12px;border:1px solid var(--line);border-radius:999px;padding:3px;background:var(--sunk)}
@@ -333,6 +342,7 @@ table.sc{border-collapse:collapse;width:100%;min-width:560px;font-size:13.5px}
       <div class="tb-cell"><small>회의일 · 주 이동</small><div class="weeknav"><button id="prevWk" aria-label="이전 주">‹</button><button class="tb-edit" id="wkDate" type="button" aria-label="회의 날짜 수정">—</button><button id="nextWk" aria-label="다음 주">›</button></div></div>
       <div class="tb-cell"><small>시간</small><button class="tb-edit" id="mtTime" type="button" aria-label="회의 시간 수정">—</button></div>
       <div class="tb-cell"><small>장소</small><button class="tb-edit" id="mtPlace" type="button" aria-label="회의 장소 수정">—</button></div>
+      <div class="tb-cell"><small>저장</small><b id="saveStat" class="savestat wait" role="status" aria-live="polite">연결 중…</b></div>
     </div>
   </header>
 
@@ -1631,11 +1641,32 @@ if(!window.__AXPI_LOCAL__){
   mk("백업 내보내기",()=>exportBackup(""));
 }
 
+/* ---------- 저장 상태 표시 ---------- */
+const SAVE={pending:0,last:null,failed:0,lastErr:""};
+const LOCALMODE=!!window.__AXPI_LOCAL__;
+function hhmm(d){return pad(d.getHours())+":"+pad(d.getMinutes())}
+function paintSave(state){const el=document.getElementById("saveStat");if(!el)return;
+  if(state==="none"){el.className="savestat err";el.textContent="저장 안 됨";return}
+  if(SAVE.pending){el.className="savestat busy";el.textContent="저장 중…";return}
+  if(SAVE.failed){el.className="savestat err";el.textContent="저장 실패 "+SAVE.failed+"건";return}
+  el.className="savestat ok";el.textContent=SAVE.last?(LOCALMODE?"이 기기에 저장 ":"저장됨 ")+hhmm(SAVE.last):(LOCALMODE?"이 기기에 저장":"연결됨");}
+function saveBar(html){let b=document.getElementById("saveBar");if(!html){if(b)b.remove();return}
+  if(!b){b=document.createElement("div");b.id="saveBar";b.className="savebar";b.setAttribute("role","alert");const w=document.querySelector(".wrap");w.insertBefore(b,w.firstChild)}b.innerHTML=html}
+function track(p){SAVE.pending++;paintSave();
+  return Promise.resolve(p).then(r=>{SAVE.pending--;SAVE.last=new Date();paintSave();return r},e=>{SAVE.pending--;SAVE.failed++;SAVE.lastErr=(e&&(e.code||e.message))||"";paintSave();
+    saveBar(`<b>저장하지 못한 변경이 있습니다 (${SAVE.failed}건).</b> 화면에는 보여도 저장소에는 없습니다. 인터넷 연결과 권한을 확인하고 새로고침 전에 '백업 내보내기'로 파일을 남겨 두세요.<button type="button" id="saveBarClose">닫기</button>`);
+    const c=document.getElementById("saveBarClose");if(c)c.onclick=()=>{SAVE.failed=0;paintSave();saveBar("")};throw e})}
+function wrapDb(raw){const doc=path=>{const d=raw.doc(path);return {id:d.id,path:d.path,get:(...a)=>d.get(...a),onSnapshot:(...a)=>d.onSnapshot(...a),
+    set:(...a)=>track(d.set(...a)),update:(...a)=>track(d.update(...a)),delete:(...a)=>track(d.delete(...a))}};
+  return {doc,collection:c=>{const col=raw.collection(c);return {doc:id=>{const d=id===undefined?col.doc():col.doc(id);return doc(c+"/"+d.id)},onSnapshot:(...a)=>col.onSnapshot(...a)}}}}
+window.addEventListener("beforeunload",e=>{if(SAVE.pending||SAVE.failed){e.preventDefault();e.returnValue=""}});
+
 /* ---------- boot ---------- */
 render();
 (async()=>{
-  try{db=await claude.use("db")}catch(e){db=null}
-  if(!db){ready=true;writable=false;document.getElementById("foot").textContent="저장소에 연결할 수 없어 빈 보드를 보여드립니다. claude.ai에서 이 페이지를 열어 주세요.";render();return}
+  try{const raw=await claude.use("db");db=raw?wrapDb(raw):null}catch(e){db=null}
+  if(!db){ready=true;writable=false;paintSave("none");saveBar("<b>이 화면은 저장소에 연결되어 있지 않습니다.</b> 입력해도 저장되지 않습니다. 사이드바에 고정된 보드나 앱의 '온라인 보드 열기'로 전체 화면을 열어 주세요.");document.getElementById("foot").textContent="저장소에 연결할 수 없어 빈 보드를 보여드립니다. claude.ai에서 이 페이지를 열어 주세요.";render();return}
+  paintSave();
   const seen=new Set();const mark=k=>{seen.add(k);if(!ready&&seen.size>=3)ready=true;softRender()};
   db.collection("items").onSnapshot(s=>{items=new Map(s.docs.map(d=>[d.id,{...d.data(),id:d.id}]));mark("i")},()=>toast("업무 목록을 불러오지 못했습니다"));
   db.doc("config/main").onSnapshot(s=>{if(s.exists)config={...DEFAULT_CONFIG,...s.data()};mark("c")},()=>{});
@@ -1670,7 +1701,7 @@ render();
     :"데이터는 이 기기에만 저장됩니다. 처음에는 ‘백업 가져오기’로 데이터를 넣고, 회의 후에는 ‘백업 내보내기’로 파일을 남겨 주세요.";
 })();
 </script>
-<script>window.__APPVER__='2026.11.05-0940';</script>
+<script>window.__APPVER__='2026.11.05-1000';</script>
 <script>(function(){
   var V=window.__APPVER__||"";
   function stamp(){var d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")}
