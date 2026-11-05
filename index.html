@@ -1657,7 +1657,7 @@ render();
   var acts=document.querySelector(".actions");
   function btn(label,fn){var b=document.createElement("button");b.className="btn";b.type="button";b.textContent=label;b.onclick=fn;acts.insertBefore(b,acts.firstChild);return b}
   function stamp(){var d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")}
-  var file=document.createElement("input");file.type="file";file.accept=".json,application/json";file.hidden=true;document.body.appendChild(file);
+  var file=document.createElement("input");file.type="file";file.hidden=true;document.body.appendChild(file);
   file.onchange=function(){var f=file.files[0];if(!f)return;var r=new FileReader();r.onload=function(){try{var s=JSON.parse(r.result);if(!s||typeof s!=="object"||!s.items)throw 0;
       var cur=L.get(),has=cur&&cur.items&&Object.keys(cur.items).length;if(confirm("현재 보드 내용을 이 백업 파일로 바꿉니다."+(has?"\n\n바꾸기 전에 지금 내용을 백업 파일(AXPI_보드백업_가져오기전_날짜.json)로 먼저 내려받습니다.":"")+"\n\n계속할까요?")){if(has){L.save({filename:"AXPI_보드백업_가져오기전_"+stamp()+".json",data:JSON.stringify(cur,null,1)});setTimeout(function(){L.replace(s)},1200)}else L.replace(s)}}catch(e){alert("AX/PI 보드 백업 파일이 아닙니다.")}file.value=""};r.readAsText(f)};
   
@@ -1665,11 +1665,12 @@ render();
   btn("백업 가져오기",function(){file.click()});
   btn("백업 내보내기",function(){L.save({filename:"AXPI_보드백업_"+stamp()+".json",data:JSON.stringify(L.get(),null,1)})});
   var ft=document.getElementById("foot");
+  try{var st=L.get(),n=Object.keys(st.items||{}).length;var tag=document.createElement("div");tag.id="dataStamp";tag.style.cssText="margin-top:6px;font-size:12px;color:#86868b";tag.textContent="이 기기 데이터: "+(st._ver||"기준 시각 없음")+" · 업무 "+n+"건";ft.parentNode.insertBefore(tag,ft.nextSibling)}catch(e){}
   ft.textContent=L.memOnly()?"이 브라우저에서는 저장이 막혀 있어 창을 닫으면 내용이 사라집니다. ‘백업 내보내기’로 파일을 남겨 주세요."
     :"데이터는 이 기기에만 저장됩니다. 처음에는 ‘백업 가져오기’로 데이터를 넣고, 회의 후에는 ‘백업 내보내기’로 파일을 남겨 주세요.";
 })();
 </script>
-<script>window.__APPVER__='2026.10.29-1041';</script>
+<script>window.__APPVER__='2026.11.05-0940';</script>
 <script>(function(){
   var V=window.__APPVER__||"";
   function stamp(){var d=new Date();return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")}
